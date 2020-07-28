@@ -2,6 +2,7 @@ import tensorflow.keras as keras
 import tensorflow as tf
 import numpy as np
 import networkx as nx
+from sklearn import metrics
 
 from .model import Model
 from ..graph import StaticGraph
@@ -35,7 +36,9 @@ class LINE(Model):
             print('Loss {:.4f}'.format(loss))
 
     def test(self):
-        pass
+        pre = metrics.precision_score(self.g.get_adj(), self.reg.get_adj())
+        print("precision:{.4f}".format(pre))
+        return pre
 
     def get_embedding_node(self, node):
         if node not in self.g.nodes():

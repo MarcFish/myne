@@ -25,7 +25,7 @@ class BaseGraph(abc.ABC):
         return NotImplementedError
 
     @abc.abstractmethod
-    def neighbors(self, v):
+    def get_node_neighbors(self, v):
         return NotImplementedError
 
     @abc.abstractmethod
@@ -66,7 +66,7 @@ class StaticGraph(BaseGraph):
     def edges_map(self):
         return list(self.edge_map.d_inv)
 
-    def neighbors(self, v):
+    def get_node_neighbors(self, v):
         return list(self.g.neighbors(v))
 
     def get_adj_dense(self):
@@ -91,7 +91,7 @@ class WeightGraph(StaticGraph):
             v1 = edge[0]
             v2 = edge[1]
             try:
-                weight = self.g[0][1]['weight']
+                weight = self.g[v1][v2]['weight']
             except KeyError:
                 weight = 1
             self.edge_weight[edge] = weight
@@ -132,3 +132,41 @@ class BiGraph(StaticGraph):
 
     def nodes_b(self):
         return list(self.b_map)
+
+
+class DynamicGraph(StaticGraph):
+    def __init__(self, g):
+        super(DynamicGraph, self).__init__(g)
+
+        self.edge_time = OrderedDict()
+        self.node_neighbors = dict()
+        for edge in self.edge_map:
+            v1 = edge[0]
+            v2 = edge[1]
+            try:
+                t = self.g[v1][v2]['time']
+            except KeyError:
+                raise KeyError
+
+            self.edge_weight[edge] = t
+            self.node_neighbors.setdefault(v1, list())
+            self.node_neighbors.setdefault(v2, list())
+            self.node_neighbors[v1].append((v2, t))
+            self.node_neighbors[v2].append((v1, t))
+        for _, i in self.node_neighbors:
+            sorted(i, key=lambda x: x[1])
+        self.edge_time_list = list()
+        for edge, t in self.edge_time.items():
+            self.edge_time_list.append(t)
+
+    def get_edge_time(self, edge):
+        return self.edge_weight[edge]
+
+    def get_edge_time_list(self):
+        return self.edge_time_list
+
+    def get_node_history_neighbors(self, node, with_time=True):
+        if with_time:
+            self.node_neighbors[node]
+        else:
+            return self.get_node_neighbors(node)
