@@ -1,172 +1,129 @@
 import networkx as nx
-import abc
 import numpy as np
 from collections import OrderedDict
 
-from .utils import MapDict
+from .utils import read_txt, MapDict
 
 
-class BaseGraph(abc.ABC):
+class StaticGraph:
+    def __init__(self, g=None):
+        self._map_g = nx.Graph()
+        self._map_adj = None
+        self._node_map = None
+        self._edge_map = None
 
-    @abc.abstractmethod
-    def nodes(self):
-        return NotImplementedError
+        if g is not None:
+            self._g = g
+            self._node_map = MapDict(list(self._g.nodes))
+            for edge in self._g.edges:
+                v0 = edge[0]
+                v1 = edge[1]
+                self._map_g.add_edge(self._node_map.get(v0), self._node_map.get(v1))
+            self._edge_map = MapDict(list(self._map_g.edges))
+            self._map_adj = nx.adjacency_matrix(self._map_g)
+        else:
+            self._g = nx.Graph()
 
-    @abc.abstractmethod
-    def edges(self):
-        return NotImplementedError
+    def read_from_edge_list(self, filename):
+        for row in read_txt(filename):
+            row = row.split()
+            self._g.add_edge(row[0], row[1])
+        self._node_map = MapDict(list(self._g.nodes))
+        for edge in self._g.edges:
+            v0 = edge[0]
+            v1 = edge[1]
+            self._map_g.add_edge(self._node_map.get(v0), self._node_map.get(v1))
+        self._edge_map = MapDict(list(self._map_g.edges))
+        self._map_adj = nx.adjacency_matrix(self._map_g)
 
-    @abc.abstractmethod
-    def nodes_map(self):
-        return NotImplementedError
+    def read_from_array(self, array):
+        self._g = nx.from_numpy_array(array)
+        self._node_map = MapDict(list(self._g.nodes))
+        for edge in self._g.edges:
+            v0 = edge[0]
+            v1 = edge[1]
+            self._map_g.add_edge(self._node_map.get(v0), self._node_map.get(v1))
+        self._edge_map = MapDict(list(self._map_g.edges))
+        self._map_adj = nx.adjacency_matrix(self._map_g)
 
-    @abc.abstractmethod
-    def edges_map(self):
-        return NotImplementedError
+    def get_nodes_list(self):
+        return list(self._node_map.iter_node())
 
-    @abc.abstractmethod
-    def get_node_neighbors(self, v):
-        return NotImplementedError
+    def get_edges_list(self):
+        return list(self._edge_map.iter_node())
 
-    @abc.abstractmethod
-    def get_adj_dense(self):
-        return NotImplementedError
+    def get_nodes_map_list(self):
+        return list(self._node_map.iter_node_map())
 
-    @abc.abstractmethod
-    def get_adj(self):
-        return NotImplementedError
+    def get_edges_map_list(self):
+        return list(self._edge_map.iter_node_map())
 
-    @abc.abstractmethod
-    def get_node_degree_list(self):
-        return NotImplementedError
+    def get_node_map_iter(self):
+        return self._node_map.d.items()
 
+    def get_edge_map_iter(self):
+        return self._edge_map.d.items()
 
-class StaticGraph(BaseGraph):
-    def __init__(self, g):
-        self.g = g
-        self.node_map = MapDict(list(g.nodes))
-        self.edge_map = MapDict(list(g.edges))
+    def get_nodes_number(self):
+        return len(self._node_map)
 
-        edge_list = list()
-        for edge in self.edge_map:
-            v1 = self.node_map[edge[0]]
-            v2 = self.node_map[edge[1]]
-            edge_list.append((v1, v2))
-        self.edge_node_map = MapDict(edge_list)
+    def get_edges_number(self):
+        return len(self._edge_map)
 
-    def nodes(self):
-        return list(self.node_map)
+    def get_node_map(self, node):
+        return self._node_map[node]
 
-    def edges(self):
-        return list(self.edge_map)
+    def get_edge_map(self, edge):
+        return self._edge_map[edge]
 
-    def nodes_map(self):
-        return list(self.node_map.d_inv)
-
-    def edges_map(self):
-        return list(self.edge_map.d_inv)
-
-    def get_node_neighbors(self, v):
-        return list(self.g.neighbors(v))
+    def get_node_neighbors(self, v, is_map=True):
+        if is_map:
+            return list(self._map_g.neighbors(v))
+        else:
+            return list(self._g.neighbors(v))
 
     def get_adj_dense(self):
         return np.array(nx.adjacency_matrix(self.g).todense(), dtype='float32')
 
     def get_adj(self):
-        return nx.adjacency_matrix(self.g)
+        return self._map_adj
 
-    def get_node_degree_list(self):
-        degree_list = list()
-        for n in self.node_map:
-            degree_list.append(nx.degree(self.g, n))
-        return degree_list
+    def get_nodes_degree_list(self):
+        return [nx.degree(self._map_g, n) for n in self._node_map.iter_node_map()]
 
 
 class WeightGraph(StaticGraph):
-    def __init__(self, g):
+    def __init__(self, g=None):
         super(WeightGraph, self).__init__(g)
+        self._weight_list = list()
 
-        self.edge_weight = OrderedDict()
-        for edge in self.edge_map:
-            v1 = edge[0]
-            v2 = edge[1]
-            try:
-                weight = self.g[v1][v2]['weight']
-            except KeyError:
-                weight = 1
-            self.edge_weight[edge] = weight
-
-        self.edge_weight_list = list()
-        for edge, weight in self.edge_weight.items():
-            self.edge_weight_list.append(weight)
+    def read_from_edge_list(self, filename):
+        for row in read_txt(filename):
+            row = row.split()
+            self._g.add_edge(row[0], row[1], weight=int(row[2]))
+        self._node_map = MapDict(list(self._g.nodes))
+        for edge in self._g.edges:
+            v0 = edge[0]
+            v1 = edge[1]
+            w = self._g[v0][v1]['weight']
+            self._map_g.add_edge(self._node_map.get(v0), self._node_map.get(v1), weight=w)
+        self._edge_map = MapDict(list(self._map_g.edges))
+        self._map_adj = nx.adjacency_matrix(self._map_g)
+        self._weight_list = [self._map_g[edge[0]][edge[1]]['weight']
+                             for edge in self._edge_map.iter_node()]
 
     def get_edge_weight(self, edge):
-        return self.edge_weight[edge]
+        return self._weight_list[self._edge_map.get(edge)]
 
     def get_edge_weight_list(self):
-        return self.edge_weight_list
+        return self._weight_list
+
+    def get_node_neighbors(self, v, is_map=True):
+        return self._map_adj[v].nonzero()[1], \
+                   self._map_adj[self._map_adj[v].nonzero()].toarray()[0]
 
 
-class BiGraph(StaticGraph):
-    def __init__(self, edge_list):
-        self.a_map = None
-        self.b_map = None
-        self.g = nx.Graph()
-
-        self.get_graph(edge_list)
-
-        super(BiGraph, self).__init__(g)
-
-    def get_graph(self, edge_list):
-        a_list = list()
-        b_list = list()
-        for a, b in edge_list:
-            a_list.append(a)
-            b_list.append(b)
-            self.g.add_edge(a, b)
-        self.a_map = MapDict(a_list)
-        self.b_map = MapDict(b_list)
-
-    def nodes_a(self):
-        return list(self.a_map)
-
-    def nodes_b(self):
-        return list(self.b_map)
 
 
-class DynamicGraph(StaticGraph):
-    def __init__(self, g):
-        super(DynamicGraph, self).__init__(g)
 
-        self.edge_time = OrderedDict()
-        self.node_neighbors = dict()
-        for edge in self.edge_map:
-            v1 = edge[0]
-            v2 = edge[1]
-            try:
-                t = self.g[v1][v2]['time']
-            except KeyError:
-                raise KeyError
 
-            self.edge_weight[edge] = t
-            self.node_neighbors.setdefault(v1, list())
-            self.node_neighbors.setdefault(v2, list())
-            self.node_neighbors[v1].append((v2, t))
-            self.node_neighbors[v2].append((v1, t))
-        for _, i in self.node_neighbors:
-            sorted(i, key=lambda x: x[1])
-        self.edge_time_list = list()
-        for edge, t in self.edge_time.items():
-            self.edge_time_list.append(t)
-
-    def get_edge_time(self, edge):
-        return self.edge_weight[edge]
-
-    def get_edge_time_list(self):
-        return self.edge_time_list
-
-    def get_node_history_neighbors(self, node, with_time=True):
-        if with_time:
-            self.node_neighbors[node]
-        else:
-            return self.get_node_neighbors(node)

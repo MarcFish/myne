@@ -21,3 +21,7 @@ class Model(abc.ABC):
     @abc.abstractmethod
     def get_reconstruct_graph(self):
         return NotImplementedError
+
+    @abc.abstractmethod
+    def visual(self):
+        return NotImplementedError

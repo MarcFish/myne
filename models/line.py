@@ -21,7 +21,6 @@ class LINE(Model):
         self.order = order
         self.neg_p = p
 
-        self.model = None
         self.optimizer = keras.optimizers.Adam(self.lr)
 
         self.embeddings = keras.layers.Embedding(input_dim=len(self.g.nodes()), output_dim=self.embed_size)
