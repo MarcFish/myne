@@ -1,4 +1,8 @@
 import abc
+from sklearn.manifold import TSNE
+import networkx as nx
+
+from ..utils import scatter2d
 
 
 class Model(abc.ABC):
@@ -22,6 +26,12 @@ class Model(abc.ABC):
     def get_reconstruct_graph(self):
         return NotImplementedError
 
-    @abc.abstractmethod
+    def embed_visual(self):
+        x = self.get_embedding_matrix()
+        x_embed = TSNE(n_components=2).fit_transform(x)
+        plt = scatter2d(x_embed[:,0], x_embed[:,1])
+        return plt
+
     def visual(self):
-        return NotImplementedError
+        nx.draw_spring(self.g._map_g)
+        return

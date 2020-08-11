@@ -2,6 +2,7 @@ import tensorflow.keras as keras
 import tensorflow as tf
 import numpy as np
 import networkx as nx
+from sklearn.metrics.pairwise import cosine_similarity
 
 from .model import Model
 from ..graph import StaticGraph
@@ -12,7 +13,8 @@ class SDNE(Model):
                  embed_size=128, alpha=0.3, beta=10.0,
                  epochs=2000, batch=200, lr=0.001, layer_size_list=None):
         self.g = graph
-        self.A = self.g.get_adj_dense()
+        self.A = self.g.get_adj().todense().astype(np.float32)
+        self.node_size = self.g.get_nodes_number()
 
         self.embed_size = embed_size
         self.alpha = alpha
@@ -26,7 +28,7 @@ class SDNE(Model):
         else:
             self.layer_size_list = layer_size_list
 
-        self.model = _SDNE(len(self.g.nodes()), self.layer_size_list)
+        self.model = _SDNE(self.node_size, self.layer_size_list)
         self.optimizer = keras.optimizers.Adam(self.lr)
 
         self.embedding_matrix = None
@@ -34,7 +36,7 @@ class SDNE(Model):
 
     def train(self):
         for epoch in range(self.epochs):
-            index = np.random.randint(self.A.shape[0], size=self.BATCH)
+            index = np.random.randint(self.node_size, size=self.batch)
             adj_batch_train = self.A[index, :]
             adj_mat_train = adj_batch_train[:, index]
             b_mat_train = np.ones_like(adj_batch_train)
@@ -43,26 +45,42 @@ class SDNE(Model):
 
             if epoch % 1000 == 0:
                 print('Epoch {} Loss {:.4f}'.format(epoch, loss))
+        self.get_embedding_matrix()
 
     def test(self):  # TODO
         pass
 
+    def link_pre(self, k=5):
+        hit = 0
+        recall = 0
+        for node in self.g.get_nodes_map_list():
+            neighbors = self.g.get_node_neighbors(node)
+            node_embed = self.get_embedding_node(node).reshape((1, self.embed_size))
+            neighbors_embed = np.asarray([self.get_embedding_node(n) for n in neighbors])\
+                .reshape(len(neighbors), self.embed_size)
+            pre = cosine_similarity(node_embed, neighbors_embed)
+            cand = set(np.asarray(neighbors)[np.argsort(pre)].tolist()[0][-k:])
+            for n in neighbors:
+                if n in cand:
+                    hit += 1
+            recall += len(neighbors)
+        recall = float(hit)/float(recall)
+        print("recall:{:.4f}".format(recall))
+        return recall
+
     def get_embedding_matrix(self):  # TODO
-        if self.embedding_matrix is None:
-            self.embedding_matrix = np.zeros((len(self.g.nodes()), self.embed_size))
-            for v, i in self.g.node_map.d.items():
-                self.embedding_matrix[i] = self.model(self.A[i])[0].numpy()
+        self.embedding_matrix = np.zeros((len(self.g.nodes()), self.embed_size))
+        for v, i in self.g.get_node_map_iter():
+            self.embedding_matrix[i] = self.model(self.A[i])[0].numpy()
         return self.embedding_matrix
 
     def get_reconstruct_graph(self):
-        if self.reg is None:
-            a_new = tf.cast(tf.math.greater(self.model(self.A)[1], 0.9), tf.int32).numpy()
-            self.reg = StaticGraph(nx.from_numpy_matrix(a_new))
+        a_new = tf.cast(tf.math.greater(self.model(self.A)[1], 0.9), tf.int32).numpy()
+        self.reg = StaticGraph(nx.from_numpy_matrix(a_new))
         return self.reg
 
     def get_embedding_node(self, node):  # TODO
-        index = self.g.node_map[node]
-        embed = self.model(self.A[index])[0].numpy()
+        embed = self.model(self.A[node])[0].numpy()
         return embed
 
     def loss_1(self, A, enc_out):
@@ -74,7 +92,7 @@ class SDNE(Model):
         return tf.reduce_sum(tf.square((inp - oup) * B))
 
     def loss_final(self, A, inp, enc_out, dec_out, B):
-        return self.loss2(inp, dec_out, B) + self.alpha * self.loss_1(A, enc_out)
+        return self.loss_2(inp, dec_out, B) + self.alpha * self.loss_1(A, enc_out)
 
     @tf.function
     def train_step(self, adj_batch_train, adj_mat_train, b_mat_train):

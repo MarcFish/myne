@@ -3,6 +3,7 @@ import csv
 from copy import deepcopy
 import random
 import networkx as nx
+import matplotlib.pyplot as plt
 
 
 class MapDict:
@@ -68,7 +69,6 @@ class MapDict:
         return [self.d_inv[node_map] for node_map in map_list]
 
     def pop(self, key):
-        print(key)
         self.d_inv.pop(self.d.get(key))
         self.d.pop(key)
 
@@ -102,21 +102,31 @@ def read_txt(filename):
             yield row.strip()
 
 
-def train_test_split(sg, th):
+def scatter2d(x,y):
+    plt.scatter(x,y)
+    plt.show()
+    return plt
+
+def train_test_split(sg, th=0.7):
     train_sg = deepcopy(sg)
-    test_sg = deepcopy(sg)
-    for edge in sg._g.edges():
+    node_neighbors = dict()
+    for edge in sg.get_edges_list():
         v0 = edge[0]
         v1 = edge[1]
+        if train_sg.get_node_map_degree(v0) <2 or train_sg.get_node_map_degree(v1) < 2:
+            continue
         v0_map = sg.get_node_map(v0)
         v1_map = sg.get_node_map(v1)
-        if random.uniform(0, 1) < th:
-            train_sg._g.remove_edge(v0, v1)
-            train_sg._map_g.remove_edge(v0_map, v1_map)
-            train_sg._edge_map.pop((v0_map, v1_map))
-        else:
-            test_sg._g.remove_edge(v0, v1)
-            test_sg._map_g.remove_edge(v0_map, v1_map)
-            test_sg._edge_map.pop((v0_map, v1_map))
-    train_sg._map_adj = nx.adjacency_matrix(train_sg._map_g)
-    test_sg._map_adj = nx.adjacency_matrix(test_sg._map_g)
+        if random.uniform(0, 1) > th:
+            train_sg._g.remove_edge(v0_map, v1_map)
+            train_sg._map_g.remove_edge(v0, v1)
+            train_sg._edge_map.pop((v0, v1))
+
+            train_sg._map_adj[v0, v1] = 0
+            train_sg._map_adj[v1, v0] = 0
+
+            node_neighbors.setdefault(v0, list())
+            node_neighbors.setdefault(v1, list())
+            node_neighbors[v0].append(v1)
+            node_neighbors[v1].append(v0)
+    return train_sg, node_neighbors
