@@ -7,11 +7,12 @@ from scipy.sparse import csr_matrix
 # from ..graph import DynamicGraph
 # from ..graph import StaticGraph
 from .model import Model
+from ..utils import train_test_split_temporal
 
 
 class HTNE(Model):
     def __init__(self, graph, embed_size=128, batch=1000, epochs=200, lr=0.01, p=0.75, neg_number=5, hist_number=5):
-        self.g = graph
+        self.g, self.test_dict = train_test_split_temporal(graph)
         self.embed_size = embed_size
         self.lr = lr
         self.batch = batch
@@ -44,11 +45,14 @@ class HTNE(Model):
     def link_pre(self, k=5):
         hit = 0
         recall = 0
-        precision = k*self.node_size
-        cand = np.asarray(self.g.get_nodes_map_list())
+        precision =  k * len(self.test_dict)
+        cand = list()
+        for _, v in self.test_dict.items():
+            cand.extend(v)
+        cand = np.asarray(cand)
         cand_embed = self.embeddings(cand)
-        for node in self.g.get_nodes_map_list():
-            neighbors = np.asarray(self.g.get_node_neighbors(node))[:, 0]
+        for node, neighbors in self.test_dict.items():
+            neighbors = np.asarray(neighbors)
             node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
             pre = self.g1(node_embed, cand_embed).numpy()
             pre = cand[np.argsort(pre)].tolist()[-k:]

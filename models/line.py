@@ -47,7 +47,7 @@ class LINE(Model):
     def link_pre(self, k=5):
         hit = 0
         recall = 0
-        precision = k * self.node_size
+        precision = k * len(self.test_dict)
         cand = list()
         for _, v in self.test_dict.items():
             cand.extend(v)

@@ -107,13 +107,14 @@ def scatter2d(x,y):
     plt.show()
     return plt
 
+
 def train_test_split(sg, th=0.7):
     train_sg = deepcopy(sg)
     node_neighbors = dict()
     for edge in sg.get_edges_list():
         v0 = edge[0]
         v1 = edge[1]
-        if train_sg.get_node_map_degree(v0) <2 or train_sg.get_node_map_degree(v1) < 2:
+        if train_sg.get_node_map_degree(v0) < 2 or train_sg.get_node_map_degree(v1) < 2:
             continue
         v0_map = sg.get_node_map(v0)
         v1_map = sg.get_node_map(v1)
@@ -130,3 +131,30 @@ def train_test_split(sg, th=0.7):
             node_neighbors[v0].append(v1)
             node_neighbors[v1].append(v0)
     return train_sg, node_neighbors
+
+
+def train_test_split_temporal(tg, th=0.7):
+    train_tg = deepcopy(tg)
+    node_neighbors = dict()
+    t = sorted(tg._temporal_list)
+    slice_ = t[int(len(t)*th)]
+    for edge in tg.get_edges_list():
+        if train_tg.get_node_map_degree(edge[0])<2 or train_tg.get_node_map_degree(edge[1]) < 2:
+            continue
+        if tg.get_edge_time(edge) > slice_:
+            train_tg._g.remove_edge(tg.get_node_map(edge[0]), tg.get_node_map(edge[1]))
+            train_tg._map_g.remove_edge(edge[0], edge[1])
+            train_tg._edge_map.pop((edge[0], edge[1]))
+
+            train_tg._map_adj[edge[0], edge[1]] = 0
+            train_tg._map_adj[edge[0], edge[1]] = 0
+
+            node_neighbors.setdefault(edge[0], list())
+            node_neighbors.setdefault(edge[1], list())
+            node_neighbors[edge[0]].append(edge[1])
+            node_neighbors[edge[1]].append(edge[0])
+    return train_tg, node_neighbors
+
+
+
+

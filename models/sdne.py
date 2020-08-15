@@ -6,13 +6,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .model import Model
 from ..graph import StaticGraph
+from ..utils import train_test_split
 
 
 class SDNE(Model):
     def __init__(self, graph,
                  embed_size=128, alpha=0.3, beta=10.0,
                  epochs=2000, batch=200, lr=0.001, layer_size_list=None):
-        self.g = graph
+        self.g, self.test_dict = train_test_split(graph)
         self.A = self.g.get_adj().todense().astype(np.float32)
         self.node_size = self.g.get_nodes_number()
 
@@ -31,7 +32,7 @@ class SDNE(Model):
         self.model = _SDNE(self.node_size, self.layer_size_list)
         self.optimizer = keras.optimizers.Adam(self.lr)
 
-        self.embedding_matrix = None
+        self.embeddings = None
         self.reg = None
 
     def train(self):
@@ -53,26 +54,32 @@ class SDNE(Model):
     def link_pre(self, k=5):
         hit = 0
         recall = 0
-        for node in self.g.get_nodes_map_list():
-            neighbors = self.g.get_node_neighbors(node)
-            node_embed = self.get_embedding_node(node).reshape((1, self.embed_size))
-            neighbors_embed = np.asarray([self.get_embedding_node(n) for n in neighbors])\
-                .reshape(len(neighbors), self.embed_size)
-            pre = cosine_similarity(node_embed, neighbors_embed)
-            cand = set(np.asarray(neighbors)[np.argsort(pre)].tolist()[0][-k:])
+        precision = k * len(self.test_dict)
+        cand = list()
+        for _, v in self.test_dict.items():
+            cand.extend(v)
+        cand = np.asarray(cand)
+        cand_embed = self.embeddings(cand)
+        for node,neighbors in self.test_dict.items():
+            neighbors = np.asarray(neighbors)
+            node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
+            pre = tf.math.sigmoid(tf.matmul(node_embed, cand_embed, transpose_b=True)).numpy()
+            pre = cand[np.argsort(pre)].tolist()[0][-k:]
             for n in neighbors:
-                if n in cand:
+                if n in pre:
                     hit += 1
             recall += len(neighbors)
-        recall = float(hit)/float(recall)
+        recall = float(hit) / float(recall)
+        precision = float(hit) / float(precision)
         print("recall:{:.4f}".format(recall))
-        return recall
+        print("precision:{:.4f}".format(precision))
+        return recall, precision
 
     def get_embedding_matrix(self):  # TODO
-        self.embedding_matrix = np.zeros((len(self.g.nodes()), self.embed_size))
+        self.embeddings = np.zeros((len(self.g.nodes()), self.embed_size))
         for v, i in self.g.get_node_map_iter():
-            self.embedding_matrix[i] = self.model(self.A[i])[0].numpy()
-        return self.embedding_matrix
+            self.embeddings[i] = self.model(self.A[i])[0].numpy()
+        return self.embeddings
 
     def get_reconstruct_graph(self):
         a_new = tf.cast(tf.math.greater(self.model(self.A)[1], 0.9), tf.int32).numpy()

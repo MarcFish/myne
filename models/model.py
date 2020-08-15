@@ -29,7 +29,7 @@ class Model(abc.ABC):
     def embed_visual(self):
         x = self.get_embedding_matrix()
         x_embed = TSNE(n_components=2).fit_transform(x)
-        plt = scatter2d(x_embed[:,0], x_embed[:,1])
+        plt = scatter2d(x_embed[:, 0], x_embed[:, 1])
         return plt
 
     def visual(self):
