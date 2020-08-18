@@ -11,9 +11,9 @@ from ..utils import train_test_split
 
 class LINE(Model):
     def __init__(self, graph, embed_size=128,
-                 batch=1000, epochs=2000, lr=0.01,
+                 batch=1000, epochs=2000, lr=0.001,
                  negative_ratio=5, order=2, p=0.75):
-        self.g, self.test_dict = train_test_split(graph)
+        self.g = graph
         self.embed_size = embed_size
         self.batch = batch
         self.epochs = epochs
@@ -21,39 +21,32 @@ class LINE(Model):
         self.neg_ratio = negative_ratio
         self.order = order
         self.neg_p = p
-        self.node_size = self.g.get_nodes_number()
+        self.node_size = self.g.node_number
 
         self.optimizer = keras.optimizers.Nadam(self.lr)
 
         self.embeddings = keras.layers.Embedding(input_dim=self.node_size, output_dim=self.embed_size)
         self.context_embeddings = keras.layers.Embedding(input_dim=self.node_size, output_dim=self.embed_size)
 
-        self.embedding_matrix = None
-        self.reg = None
+        self._embedding_matrix = None
 
     def train(self):
         for a, b, sign in self._get_batch():
             loss = self.train_step(a, b, sign)
             print('Loss {:.4f}'.format(tf.reduce_mean(loss)))
 
-        self.get_embedding_matrix()
-        # self.get_reconstruct_graph()
+        self._embedding_matrix = self.embeddings.get_weights()[0]
 
-    def test(self):
-        pre = metrics.precision_score(self.g.get_adj(), self.reg.get_adj(), average="macro")
-        print("precision:{.4f}".format(pre))
-        return pre
-
-    def link_pre(self, k=5):
+    def link_pre(self, test_dict, k=5):
         hit = 0
         recall = 0
-        precision = k * len(self.test_dict)
+        precision = k * len(test_dict)
         cand = list()
-        for _, v in self.test_dict.items():
+        for _, v in test_dict.items():
             cand.extend(v)
         cand = np.asarray(cand)
         cand_embed = self.embeddings(cand)
-        for node,neighbors in self.test_dict.items():
+        for node, neighbors in self.test_dict.items():
             neighbors = np.asarray(neighbors)
             node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
             pre = tf.math.sigmoid(tf.matmul(node_embed, cand_embed, transpose_b=True)).numpy()
@@ -68,20 +61,12 @@ class LINE(Model):
         print("precision:{:.4f}".format(precision))
         return recall, precision
 
-    def get_embedding_node(self, node, is_map=True):
-        if is_map:
-            return self.embeddings(node)
+    def get_embedding_node(self, node):
+        return self.embeddings(node)
 
-    def get_reconstruct_graph(self, th=0.9):
-        a_new = tf.cast(tf.math.greater(tf.math.sigmoid(
-                tf.linalg.matmul(self.get_embedding_matrix(), self.get_embedding_matrix(), transpose_b=True))
-                , th), tf.int32).numpy()
-        self.reg = StaticGraph(nx.from_numpy_matrix(a_new))
-        return self.reg
-
-    def get_embedding_matrix(self):
-        self.embedding_matrix = self.embeddings.get_weights()[0]
-        return self.embedding_matrix
+    @property
+    def embedding_matrix(self):
+        return self._embedding_matrix
 
     def loss(self, a, b, sign):
         return -tf.math.log_sigmoid(
@@ -115,10 +100,10 @@ class LINE(Model):
     def _get_batch(self):
         mod_ = 0
         mod_size = self.neg_ratio + 1
-        edge_list = np.asarray(self.g.get_edges_list())
+        edge_list = np.asarray(self.g.edge_list)
         edge_sample_list = list(range(len(edge_list)))
 
-        node_list = self.g.get_nodes_map_list()
+        node_list = self.g.node_list
         node_degrees = np.asarray(self.g.get_nodes_degree_list())
         node_prob = np.power(node_degrees, self.neg_p)
         node_prob = node_prob/np.sum(node_prob)

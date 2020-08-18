@@ -1,18 +1,14 @@
 import tensorflow.keras as keras
 import tensorflow as tf
 import numpy as np
-import networkx as nx
-from scipy.sparse import csr_matrix
+from sklearn.preprocessing import StandardScaler
 
-# from ..graph import DynamicGraph
-# from ..graph import StaticGraph
 from .model import Model
-from ..utils import train_test_split_temporal
 
 
 class HTNE(Model):
-    def __init__(self, graph, embed_size=128, batch=1000, epochs=200, lr=0.01, p=0.75, neg_number=5, hist_number=5):
-        self.g, self.test_dict = train_test_split_temporal(graph)
+    def __init__(self, graph, embed_size=128, batch=1000, epochs=200, lr=0.001, p=0.75, neg_number=5, hist_number=5):
+        self.g = graph
         self.embed_size = embed_size
         self.lr = lr
         self.batch = batch
@@ -22,7 +18,7 @@ class HTNE(Model):
         self.hist_number = hist_number
 
         self.optimizer = keras.optimizers.Nadam(self.lr)
-        self.node_size = self.g.get_nodes_number()
+        self.node_size = self.g.node_number
 
         # node_size, embed_size
         self.embeddings = keras.layers.Embedding(input_dim=self.node_size,
@@ -31,27 +27,25 @@ class HTNE(Model):
         self.delta = keras.layers.Embedding(input_dim=self.node_size,
                                             output_dim=1)
 
-        self.embedding_matrix = None
-        self.reg = None
+        self._embedding_matrix = None
 
     def train(self):
         for sign, s, t, edge_times_batch, h_s, h_s_times, h_s_mask in self._get_batch():
             loss = self.train_step(sign, s, t, edge_times_batch, h_s, h_s_times, h_s_mask)
             print("Loss {:.4f}".format(tf.reduce_mean(loss)))
 
-    def test(self):
-        pass
+        self._embedding_matrix = self.embeddings.get_weights()[0]
 
-    def link_pre(self, k=5):
+    def link_pre(self, test_dict, k=5):
         hit = 0
         recall = 0
-        precision =  k * len(self.test_dict)
+        precision = k * len(test_dict)
         cand = list()
-        for _, v in self.test_dict.items():
+        for _, v in test_dict.items():
             cand.extend(v)
         cand = np.asarray(cand)
         cand_embed = self.embeddings(cand)
-        for node, neighbors in self.test_dict.items():
+        for node, neighbors in test_dict.items():
             neighbors = np.asarray(neighbors)
             node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
             pre = self.g1(node_embed, cand_embed).numpy()
@@ -80,7 +74,6 @@ class HTNE(Model):
             h_s_embed = self.embeddings(h_s)  # batch, hist_number, embed_size
 
             delta = self.delta(s)  # batch,1
-            # d_time = tf.math.abs(tf.expand_dims(edge_times_batch, axis=1)-h_s_times)  # batch, hist_number
             d_time = tf.expand_dims(edge_times_batch, axis=1)-h_s_times
             p_mu = self.g1(s_embed, t_embed)  # batch,
             alpha = self.g2(s_embed, h_s_embed)  # batch, hist_number
@@ -101,10 +94,14 @@ class HTNE(Model):
     def _get_batch(self):
         mod_ = 0
         mod_size = self.neg_number + 1
-        edge_list = np.asarray(self.g.get_edges_list())
+        edge_list = np.asarray(self.g.edge_list)
+        t = edge_list[:, 2]
+        scaler = StandardScaler()
+        scaler.fit(t.reshape(-1, 1))
+        edge_list[:, 2] = t
         edge_sample_list = list(range(len(edge_list)))
 
-        node_list = self.g.get_nodes_map_list()
+        node_list = self.g.node_list
         node_degrees = np.asarray(self.g.get_nodes_degree_list())
         node_prob = np.power(node_degrees, self.neg_p)
         node_prob = node_prob/np.sum(node_prob)
@@ -116,7 +113,7 @@ class HTNE(Model):
                 sign = 1.0
                 edge_batch = np.random.choice(a=edge_sample_list, size=self.batch)
                 edge_batch = edge_list[edge_batch]
-                edge_times_batch = np.asarray(list(map(self.g.get_edge_time, edge_batch.tolist())))
+                edge_times_batch = scaler.transform(edge_batch[:, 2].reshape(-1, 1)).squeeze()
                 s = edge_batch[:, 0]
                 t = edge_batch[:, 1]
                 h_s = np.zeros((self.batch, self.hist_number))
@@ -126,11 +123,11 @@ class HTNE(Model):
                     neighbors = np.asarray(self.g.get_node_neighbors(x))
                     if len(neighbors) < self.hist_number:
                         h_s[i][-len(neighbors):] = neighbors[:, 0]
-                        h_s_times[i][-len(neighbors):] = neighbors[:, 1]
+                        h_s_times[i][-len(neighbors):] = scaler.transform(neighbors[:, 1].reshape(-1, 1)).squeeze()
                         h_s_mask[i][-len(neighbors):] = 1
                     else:
                         h_s[i] = neighbors[-self.hist_number:, 0]
-                        h_s_times[i] = neighbors[-self.hist_number:, 1]
+                        h_s_times[i] = scaler.transform(neighbors[-self.hist_number:, 1].reshape(-1, 1)).squeeze()
                         h_s_mask[i] = 1
             else:
                 sign = -1.0
@@ -141,11 +138,9 @@ class HTNE(Model):
             mod_ += 1
             mod_ %= mod_size
 
-    def get_embedding_matrix(self):
-        return self.embeddings.get_weights()[0]
-
-    def get_reconstruct_graph(self, th=0.9):
-        pass
-
     def get_embedding_node(self, node):
         return self.embeddings(node)
+
+    @property
+    def embedding_matrix(self):
+        return self._embedding_matrix

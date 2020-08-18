@@ -25,7 +25,7 @@ class MapDict:
         else:
             raise KeyError
 
-    def __getitem__(self, key):
+    def __getitem__(self, key):  # TODO bug
         if key in self.d:
             return self.d[key]
         elif key in self.d_inv:
@@ -102,8 +102,8 @@ def read_txt(filename):
             yield row.strip()
 
 
-def scatter2d(x,y):
-    plt.scatter(x,y)
+def scatter2d(x, y):
+    plt.scatter(x, y)
     plt.show()
     return plt
 
@@ -142,7 +142,10 @@ def train_test_split_temporal(tg, th=0.7):
         if train_tg.get_node_map_degree(edge[0])<2 or train_tg.get_node_map_degree(edge[1]) < 2:
             continue
         if tg.get_edge_time(edge) > slice_:
-            train_tg._g.remove_edge(tg.get_node_map(edge[0]), tg.get_node_map(edge[1]))
+            try:
+                train_tg._g.remove_edge(tg.get_node_map(edge[0]), tg.get_node_map(edge[1]))
+            except:
+                train_tg._g.remove_edge(tg.get_node_map(edge[1]), tg.get_node_map(edge[0]))
             train_tg._map_g.remove_edge(edge[0], edge[1])
             train_tg._edge_map.pop((edge[0], edge[1]))
 
