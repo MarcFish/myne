@@ -15,7 +15,7 @@ class BaseWalker:
 
     def simulate_walks(self, verbose=0):
 
-        nodes = list(self.g.get_nodes_list())
+        nodes = list(self.g.node_list)
 
         results = Parallel(n_jobs=self.workers, verbose=verbose, )(
             delayed(self._simulate_walks)(nodes, num) for num in
@@ -37,9 +37,9 @@ class BaseWalker:
         walk = [start_node]
         while len(walk) < self.walk_length:
             cur = walk[-1]
-            cur_nbrs = self.g.get_node_neighbors(cur,is_map=False)
+            cur_nbrs = self.g.get_node_neighbors(cur)
             if len(cur_nbrs) > 0:
                 walk.append(random.choice(cur_nbrs))
             else:
                 break
-        return walk
+        return list(map(str, walk))

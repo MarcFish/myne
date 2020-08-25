@@ -13,9 +13,9 @@ class SDNE(Model):
     def __init__(self, graph,
                  embed_size=128, alpha=0.3, beta=10.0,
                  epochs=2000, batch=200, lr=0.001, layer_size_list=None):
-        self.g, self.test_dict = train_test_split(graph)
-        self.A = self.g.get_adj().todense().astype(np.float32)
-        self.node_size = self.g.get_nodes_number()
+        self.g = graph
+        self.A = self.g.adj.todense().astype(np.float32)  # TODO: sparse represent
+        self.node_size = self.g.node_number
 
         self.embed_size = embed_size
         self.alpha = alpha
@@ -25,15 +25,18 @@ class SDNE(Model):
         self.lr = lr
 
         if layer_size_list is None:
-            self.layer_size_list = [32, 64, self.embed_size]
+            self.layer_size_list = [32, 64, 128, self.embed_size]
         else:
             self.layer_size_list = layer_size_list
 
         self.model = _SDNE(self.node_size, self.layer_size_list)
-        self.optimizer = keras.optimizers.Adam(self.lr)
+        self.optimizer = keras.optimizers.Nadam(self.lr)
 
-        self.embeddings = None
-        self.reg = None
+        self._embedding_matrix = None
+
+    @property
+    def embedding_matrix(self):
+        return self._embedding_matrix
 
     def train(self):
         for epoch in range(self.epochs):
@@ -51,15 +54,15 @@ class SDNE(Model):
     def test(self):  # TODO
         pass
 
-    def link_pre(self, k=5):
+    def link_pre(self, test_dict, k=5):
         hit = 0
         recall = 0
-        precision = k * len(self.test_dict)
+        precision = k * len(test_dict)
         cand = list()
-        for _, v in self.test_dict.items():
+        for _, v in test_dict.items():
             cand.extend(v)
         cand = np.asarray(cand)
-        cand_embed = self.embeddings(cand)
+        cand_embed = self._embedding_matrix(cand)
         for node,neighbors in self.test_dict.items():
             neighbors = np.asarray(neighbors)
             node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
@@ -76,15 +79,10 @@ class SDNE(Model):
         return recall, precision
 
     def get_embedding_matrix(self):  # TODO
-        self.embeddings = np.zeros((len(self.g.nodes()), self.embed_size))
-        for v, i in self.g.get_node_map_iter():
-            self.embeddings[i] = self.model(self.A[i])[0].numpy()
-        return self.embeddings
-
-    def get_reconstruct_graph(self):
-        a_new = tf.cast(tf.math.greater(self.model(self.A)[1], 0.9), tf.int32).numpy()
-        self.reg = StaticGraph(nx.from_numpy_matrix(a_new))
-        return self.reg
+        self._embedding_matrix = np.zeros((self.g.node_number, self.g.node_number))
+        for v, i in self.g.node_list:
+            self._embedding_matrix[i] = self.model(self.A[i])[0].numpy()
+        return self._embedding_matrix
 
     def get_embedding_node(self, node):  # TODO
         embed = self.model(self.A[node])[0].numpy()
