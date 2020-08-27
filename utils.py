@@ -89,8 +89,12 @@ def read_csv(filename, with_header=True):
             yield row
 
 
-def write_csv(filename, content_iter):
-    with open(filename, 'w', encoding='utf-8', newline='') as f:
+def write_csv(filename, content_iter,append=False):
+    if append:
+        mode = 'a'
+    else:
+        mode = 'w'
+    with open(filename, mode, encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
         for row in content_iter:
             writer.writerow(row)
