@@ -25,3 +25,7 @@ class Model(abc.ABC):
         plt = scatter2d(x_embed[:, 0], x_embed[:, 1])
         plt.show()
         return plt
+
+    @abc.abstractmethod
+    def similarity(self, x, y):
+        return NotImplementedError
