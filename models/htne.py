@@ -84,7 +84,7 @@ class HTNE(Model):
         edge_list = self.g.edge_list
         t = edge_list[:, 2]
         scaler = StandardScaler()
-        scaler.fit(t.reshape(-1, 1))
+        scaler.fit(t.reshape(-1, 1).astype(np.float32))
         edge_sample_list = list(range(len(edge_list)))
 
         node_list = self.g.node_list
@@ -99,7 +99,7 @@ class HTNE(Model):
                 sign = 1.0
                 edge_batch = np.random.choice(a=edge_sample_list, size=self.batch)
                 edge_batch = edge_list[edge_batch]
-                edge_times_batch = scaler.transform(edge_batch[:, 2].reshape(-1, 1)).squeeze()
+                edge_times_batch = scaler.transform(edge_batch[:, 2].reshape(-1, 1).astype(np.float32)).squeeze()
                 s = edge_batch[:, 0]
                 t = edge_batch[:, 1]
                 h_s = np.zeros((self.batch, self.hist_number))
@@ -114,15 +114,15 @@ class HTNE(Model):
                     if j < self.hist_number:
                         if j==0:
                             h_s[i][0] = neighbors[0, 0]
-                            h_s_times[i][0] = scaler.transform(neighbors[0, 1].reshape(-1,1)).squeeze()
+                            h_s_times[i][0] = scaler.transform(neighbors[0, 1].reshape(-1,1).astype(np.float32)).squeeze()
                             h_s_mask[i][0] = 1
                         else:
                             h_s[i][-j:] = neighbors[-j:, 0]
-                            h_s_times[i][-j:] = scaler.transform(neighbors[-j:, 1].reshape(-1, 1)).squeeze()
+                            h_s_times[i][-j:] = scaler.transform(neighbors[-j:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
                             h_s_mask[i][-j:] = 1
                     else:
                         h_s[i] = neighbors[-self.hist_number:, 0]
-                        h_s_times[i] = scaler.transform(neighbors[-self.hist_number:, 1].reshape(-1, 1)).squeeze()
+                        h_s_times[i] = scaler.transform(neighbors[-self.hist_number:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
                         h_s_mask[i] = 1
             else:
                 sign = -1.0
