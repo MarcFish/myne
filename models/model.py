@@ -1,6 +1,5 @@
 import abc
 from sklearn.manifold import TSNE
-import networkx as nx
 
 from ..utils import scatter2d
 

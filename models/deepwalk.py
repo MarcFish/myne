@@ -1,13 +1,9 @@
 from gensim.models import Word2Vec
 import numpy as np
-import networkx as nx
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn import metrics
 
 from ..walker import BaseWalker
 from .model import Model
-from ..graph import StaticGraph
-from ..utils import train_test_split
 
 
 class DeepWalk(Model):
@@ -38,6 +34,9 @@ class DeepWalk(Model):
 
         self.get_embedding_matrix()
 
+    def similarity(self, x, y):
+        return cosine_similarity(x, y)
+
     def get_embedding_node(self, node):
         self._embedding_matrix[node]
 
@@ -46,30 +45,6 @@ class DeepWalk(Model):
         for v in self.g.node_list:
             self._embedding_matrix[v] = self.wv.wv[str(v)]
         return self._embedding_matrix
-
-    def link_pre(self, test_dict, k=5):
-        hit = 0
-        recall = 0
-        precision = k * self.node_size
-        cand = list()
-        for _, v in test_dict.items():
-            cand.extend(v)
-        cand = np.asarray(cand)
-        cand_embed = self._embedding_matrix[cand]
-        for node, neighbors in test_dict.items():
-            neighbors = np.asarray(neighbors)
-            node_embed = self.get_embedding_node(node).reshape((1, self.embed_size))
-            pre = cosine_similarity(node_embed, cand_embed)
-            pre = cand[np.argsort(pre)].tolist()[0][-k:]
-            for n in neighbors:
-                if n in pre:
-                    hit += 1
-            recall += len(neighbors)
-        recall = float(hit) / float(recall)
-        precision = float(hit) / float(precision)
-        print("recall:{:.4f}".format(recall))
-        print("precision:{:.4f}".format(precision))
-        return recall, precision
 
     @property
     def embedding_matrix(self):

@@ -15,7 +15,7 @@ class BaseWalker:
 
     def simulate_walks(self, verbose=0):
 
-        nodes = list(self.g.node_list)
+        nodes = self.g.node_list
 
         results = Parallel(n_jobs=self.workers, verbose=verbose, )(
             delayed(self._simulate_walks)(nodes, num) for num in
