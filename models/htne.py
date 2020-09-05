@@ -17,8 +17,8 @@ class HTNE(Model):
         self.neg_number = neg_number
         self.hist_number = hist_number
 
-        self.optimizer = keras.optimizers.Nadam(self.lr)
-        self.node_size = self.g.node_number
+        self.optimizer = keras.optimizers.Adam(self.lr)
+        self.node_size = self.g.node_size
 
         # node_size, embed_size
         self.embeddings = keras.layers.Embedding(input_dim=self.node_size,
@@ -36,32 +36,19 @@ class HTNE(Model):
 
         self._embedding_matrix = self.embeddings.get_weights()[0]
 
-    def link_pre(self, test_dict, k=5):
-        hit = 0
-        recall = 0
-        precision = k * len(test_dict)
-        cand = list()
-        for _, v in test_dict.items():
-            cand.extend(v)
-        cand = np.asarray(cand)
-        cand_embed = self.embeddings(cand)
-        for node, neighbors in test_dict.items():
-            neighbors = np.asarray(neighbors)
-            node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
-            pre = self.g1(node_embed, cand_embed).numpy()
-            pre = cand[np.argsort(pre)].tolist()[-k:]
-            for n in neighbors:
-                if n in pre:
-                    hit += 1
-            recall += len(neighbors)
-        recall = float(hit)/float(recall)
-        precision = float(hit)/float(precision)
-        print("recall:{:.4f}".format(recall))
-        print("precision:{:.4f}".format(precision))
-        return recall, precision
-
     def g1(self, x, y):
         return -tf.reduce_sum(tf.math.square(x - y), axis=-1)
+
+    def similarity(self, x, y):
+        if type(x) == int:
+            x_embed = tf.reshape(self.get_embedding_node(x), (1,self.embed_size))
+        else:
+            x_embed = self.embeddings(np.asarray(x))
+        if type(y) == int:
+            y_embed = tf.reshape(self.get_embedding_node(y), (1,self.embed_size))
+        else:
+            y_embed = self.embeddings(np.asarray(y))
+        return (-tf.reduce_sum(tf.math.square(x_embed-y_embed), axis=-1)).numpy()
 
     def g2(self, x, y):
         return -tf.reduce_sum(tf.math.square(tf.expand_dims(x, axis=1) - y), axis=-1)
@@ -94,11 +81,10 @@ class HTNE(Model):
     def _get_batch(self):
         mod_ = 0
         mod_size = self.neg_number + 1
-        edge_list = np.asarray(self.g.edge_list)
+        edge_list = self.g.edge_list
         t = edge_list[:, 2]
         scaler = StandardScaler()
         scaler.fit(t.reshape(-1, 1))
-        edge_list[:, 2] = t
         edge_sample_list = list(range(len(edge_list)))
 
         node_list = self.g.node_list
@@ -120,11 +106,20 @@ class HTNE(Model):
                 h_s_times = np.zeros((self.batch, self.hist_number))
                 h_s_mask = np.zeros((self.batch, self.hist_number))
                 for i, x in enumerate(s):
-                    neighbors = np.asarray(self.g.get_node_neighbors(x))
-                    if len(neighbors) < self.hist_number:
-                        h_s[i][-len(neighbors):] = neighbors[:, 0]
-                        h_s_times[i][-len(neighbors):] = scaler.transform(neighbors[:, 1].reshape(-1, 1)).squeeze()
-                        h_s_mask[i][-len(neighbors):] = 1
+                    neighbors = np.asarray(self.g.get_node_neighbors(x, with_time=True))
+                    neighbors = np.stack(sorted(neighbors, key=lambda x:x[1]),axis=0)
+                    for j, temp in enumerate(neighbors):
+                        if temp[1] > edge_batch[i, 2]:
+                            break
+                    if j < self.hist_number:
+                        if j==0:
+                            h_s[i][0] = neighbors[0, 0]
+                            h_s_times[i][0] = scaler.transform(neighbors[0, 1].reshape(-1,1)).squeeze()
+                            h_s_mask[i][0] = 1
+                        else:
+                            h_s[i][-j:] = neighbors[-j:, 0]
+                            h_s_times[i][-j:] = scaler.transform(neighbors[-j:, 1].reshape(-1, 1)).squeeze()
+                            h_s_mask[i][-j:] = 1
                     else:
                         h_s[i] = neighbors[-self.hist_number:, 0]
                         h_s_times[i] = scaler.transform(neighbors[-self.hist_number:, 1].reshape(-1, 1)).squeeze()

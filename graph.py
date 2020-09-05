@@ -79,7 +79,7 @@ class StaticGraph(Graph):
         return self._adj_csr[node].indices
 
     def get_node_degree(self, node):
-        return self._adj.csr[node].nnz
+        return self._adj_csr[node].nnz
 
     def get_nodes_degree_list(self):
         return np.asarray([self.get_node_degree(n) for n in self.node_list])

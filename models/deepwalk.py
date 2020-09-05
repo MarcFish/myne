@@ -35,10 +35,18 @@ class DeepWalk(Model):
         self.get_embedding_matrix()
 
     def similarity(self, x, y):
-        return cosine_similarity(x, y)
+        if type(x) == int:
+            x_embed = self.get_embedding_node(x).reshape(1, -1)
+        else:
+            x_embed = self._embedding_matrix[x]
+        if type(y) == int:
+            y_embed = self.get_embedding_node(y).reshape(1, -1)
+        else:
+            y_embed = self._embedding_matrix[y]
+        return cosine_similarity(x_embed, y_embed)
 
     def get_embedding_node(self, node):
-        self._embedding_matrix[node]
+        return self._embedding_matrix[node]
 
     def get_embedding_matrix(self):
         self._embedding_matrix = np.zeros((self.node_size, self.embed_size))

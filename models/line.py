@@ -34,20 +34,18 @@ class LINE(Model):
         self._embedding_matrix = self.embeddings.get_weights()[0]
 
     def similarity(self, x, y):
-        if len(x) == 1:
+        if type(x) == int:
             x_embed = tf.reshape(self.get_embedding_node(x), (1,self.embed_size))
         else:
             x_embed = self.embeddings(x)
-        if len(y) == 1:
+        if type(y) == int:
             y_embed = tf.reshape(self.get_embedding_node(y), (1,self.embed_size))
         else:
             y_embed = self.embeddings(y)
-        if len(x) != len(y) and len(x) != 1 and len(y) != 1:
-            raise Exception("length not equal")
         return tf.math.sigmoid(tf.matmul(x_embed, y_embed, transpose_b=True)).numpy()
 
     def get_embedding_node(self, node):
-        return self.embeddings(node)
+        return self.embeddings(node).numpy()
 
     @property
     def embedding_matrix(self):
