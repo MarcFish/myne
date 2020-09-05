@@ -16,7 +16,7 @@ class DeepWalk(Model):
         self.window_size = window_size
         self.iters = iters
         self.workers = workers
-        self.node_size = self.g.node_number
+        self.node_size = self.g.node_size
 
         self._embedding_matrix = None
 

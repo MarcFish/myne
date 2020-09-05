@@ -1,12 +1,8 @@
 import tensorflow.keras as keras
 import tensorflow as tf
 import numpy as np
-import networkx as nx
-from sklearn.metrics.pairwise import cosine_similarity
 
 from .model import Model
-from ..graph import StaticGraph
-from ..utils import train_test_split
 
 
 class SDNE(Model):
@@ -15,7 +11,7 @@ class SDNE(Model):
                  epochs=2000, batch=200, lr=0.001, layer_size_list=None):
         self.g = graph
         self.A = self.g.adj.todense().astype(np.float32)  # TODO: sparse represent
-        self.node_size = self.g.node_number
+        self.node_size = self.g.node_size
 
         self.embed_size = embed_size
         self.alpha = alpha
@@ -30,7 +26,7 @@ class SDNE(Model):
             self.layer_size_list = layer_size_list
 
         self.model = _SDNE(self.node_size, self.layer_size_list)
-        self.optimizer = keras.optimizers.Nadam(self.lr)
+        self.optimizer = keras.optimizers.Adam(self.lr)
 
         self._embedding_matrix = None
 
@@ -51,32 +47,18 @@ class SDNE(Model):
                 print('Epoch {} Loss {:.4f}'.format(epoch, loss))
         self.get_embedding_matrix()
 
-    def test(self):  # TODO
-        pass
-
-    def link_pre(self, test_dict, k=5):
-        hit = 0
-        recall = 0
-        precision = k * len(test_dict)
-        cand = list()
-        for _, v in test_dict.items():
-            cand.extend(v)
-        cand = np.asarray(cand)
-        cand_embed = self._embedding_matrix(cand)
-        for node,neighbors in self.test_dict.items():
-            neighbors = np.asarray(neighbors)
-            node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
-            pre = tf.math.sigmoid(tf.matmul(node_embed, cand_embed, transpose_b=True)).numpy()
-            pre = cand[np.argsort(pre)].tolist()[0][-k:]
-            for n in neighbors:
-                if n in pre:
-                    hit += 1
-            recall += len(neighbors)
-        recall = float(hit) / float(recall)
-        precision = float(hit) / float(precision)
-        print("recall:{:.4f}".format(recall))
-        print("precision:{:.4f}".format(precision))
-        return recall, precision
+    def similarity(self, x, y):
+        if len(x) == 1:
+            x_embed = tf.reshape(self.get_embedding_node(x), (1, self.embed_size))
+        else:
+            x_embed = self.embeddings(x)
+        if len(y) == 1:
+             y_embed = tf.reshape(self.get_embedding_node(y), (1, self.embed_size))
+        else:
+            y_embed = self.embeddings(y)
+        if len(x) != len(y) and len(x) != 1 and len(y) != 1:
+            raise Exception("length not equal")
+        return tf.math.sigmoid(tf.matmul(x_embed, y_embed, transpose_b=True)).numpy()
 
     def get_embedding_matrix(self):  # TODO
         self._embedding_matrix = np.zeros((self.g.node_number, self.g.node_number))

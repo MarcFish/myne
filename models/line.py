@@ -1,12 +1,8 @@
 import tensorflow.keras as keras
 import tensorflow as tf
 import numpy as np
-import networkx as nx
-from sklearn import metrics
 
 from .model import Model
-from ..graph import StaticGraph
-from ..utils import train_test_split
 
 
 class LINE(Model):
@@ -23,7 +19,7 @@ class LINE(Model):
         self.neg_p = p
         self.node_size = self.g.node_number
 
-        self.optimizer = keras.optimizers.Nadam(self.lr)
+        self.optimizer = keras.optimizers.SGD(self.lr)
 
         self.embeddings = keras.layers.Embedding(input_dim=self.node_size, output_dim=self.embed_size)
         self.context_embeddings = keras.layers.Embedding(input_dim=self.node_size, output_dim=self.embed_size)
@@ -37,29 +33,18 @@ class LINE(Model):
 
         self._embedding_matrix = self.embeddings.get_weights()[0]
 
-    def link_pre(self, test_dict, k=5):
-        hit = 0
-        recall = 0
-        precision = k * len(test_dict)
-        cand = list()
-        for _, v in test_dict.items():
-            cand.extend(v)
-        cand = np.asarray(cand)
-        cand_embed = self.embeddings(cand)
-        for node, neighbors in self.test_dict.items():
-            neighbors = np.asarray(neighbors)
-            node_embed = tf.reshape(self.get_embedding_node(node), (1, self.embed_size))
-            pre = tf.math.sigmoid(tf.matmul(node_embed, cand_embed, transpose_b=True)).numpy()
-            pre = cand[np.argsort(pre)].tolist()[0][-k:]
-            for n in neighbors:
-                if n in pre:
-                    hit += 1
-            recall += len(neighbors)
-        recall = float(hit) / float(recall)
-        precision = float(hit) / float(precision)
-        print("recall:{:.4f}".format(recall))
-        print("precision:{:.4f}".format(precision))
-        return recall, precision
+    def similarity(self, x, y):
+        if len(x) == 1:
+            x_embed = tf.reshape(self.get_embedding_node(x), (1,self.embed_size))
+        else:
+            x_embed = self.embeddings(x)
+        if len(y) == 1:
+            y_embed = tf.reshape(self.get_embedding_node(y), (1,self.embed_size))
+        else:
+            y_embed = self.embeddings(y)
+        if len(x) != len(y) and len(x) != 1 and len(y) != 1:
+            raise Exception("length not equal")
+        return tf.math.sigmoid(tf.matmul(x_embed, y_embed, transpose_b=True)).numpy()
 
     def get_embedding_node(self, node):
         return self.embeddings(node)
@@ -100,7 +85,7 @@ class LINE(Model):
     def _get_batch(self):
         mod_ = 0
         mod_size = self.neg_ratio + 1
-        edge_list = np.asarray(self.g.edge_list)
+        edge_list = self.g.edge_list
         edge_sample_list = list(range(len(edge_list)))
 
         node_list = self.g.node_list
