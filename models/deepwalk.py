@@ -1,6 +1,5 @@
 from gensim.models import Word2Vec
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 from ..walker import BaseWalker
 from .model import Model
@@ -35,15 +34,9 @@ class DeepWalk(Model):
         self.get_embedding_matrix()
 
     def similarity(self, x, y):
-        if type(x) == int:
-            x_embed = self.get_embedding_node(x).reshape(1, -1)
-        else:
-            x_embed = self._embedding_matrix[x]
-        if type(y) == int:
-            y_embed = self.get_embedding_node(y).reshape(1, -1)
-        else:
-            y_embed = self._embedding_matrix[y]
-        return cosine_similarity(x_embed, y_embed)
+        x_embed = self.get_embedding_node(x).reshape(-1, 1)
+        y_embed = self.get_embedding_node(y).reshape(-1, 1)
+        return x_embed.dot(y_embed)/(np.linalg.norm(x_embed, ord=2)*np.linalg.norm(y_embed, ord=2))
 
     def get_embedding_node(self, node):
         return self._embedding_matrix[node]
@@ -57,6 +50,3 @@ class DeepWalk(Model):
     @property
     def embedding_matrix(self):
         return self._embedding_matrix
-
-
-

@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 from .model import Model
+from ..layers import DenseLayer
 
 
 class SDNE(Model):
@@ -43,21 +44,13 @@ class SDNE(Model):
             b_mat_train[adj_batch_train != 0] = self.beta
             loss = self.train_step(adj_batch_train, adj_mat_train, b_mat_train)
 
-            if epoch % 1000 == 0:
+            if epoch % 200 == 0:
                 print('Epoch {} Loss {:.4f}'.format(epoch, loss))
         self.get_embedding_matrix()
 
     def similarity(self, x, y):
-        if len(x) == 1:
-            x_embed = tf.reshape(self.get_embedding_node(x), (1, self.embed_size))
-        else:
-            x_embed = self.embeddings(x)
-        if len(y) == 1:
-             y_embed = tf.reshape(self.get_embedding_node(y), (1, self.embed_size))
-        else:
-            y_embed = self.embeddings(y)
-        if len(x) != len(y) and len(x) != 1 and len(y) != 1:
-            raise Exception("length not equal")
+        x_embed = tf.reshape(self.get_embedding_node(x), (1, self.embed_size))
+        y_embed = tf.reshape(self.get_embedding_node(y), (1, self.embed_size))
         return tf.math.sigmoid(tf.matmul(x_embed, y_embed, transpose_b=True)).numpy()
 
     def get_embedding_matrix(self):  # TODO
@@ -94,47 +87,12 @@ class SDNE(Model):
         return loss
 
 
-class _Encoder(keras.layers.Layer):
-    def __init__(self, layer_size_list):
-        super(_Encoder, self).__init__()
-        self.layer_size_list = layer_size_list
-        self.layers = list()
-        for s in self.layer_size_list:
-            self.layers.append(
-                keras.layers.Dense(s, activation=keras.activations.relu,
-                                                     kernel_regularizer=keras.regularizers.l2))
-
-    def call(self, inp):
-        f = inp
-        for layer in self.layers:
-            f = layer(f)
-
-        return f
-
-
-class _Decoder(keras.layers.Layer):
-    def __init__(self, layer_size_list):
-        super(_Decoder, self).__init__()
-        self.layer_size_list = list(reversed(layer_size_list))
-        self.layers = list()
-        for s in self.layer_size_list:
-            self.layers.append(
-                keras.layers.Dense(s, keras.activations.relu, kernel_regularizer=keras.regularizers.l2))
-
-    def call(self, inp):
-        f = inp
-        for layer in self.layers:
-            f = layer(f)
-
-        return f
-
-
 class _SDNE(keras.Model):
     def __init__(self, node_size, layer_size_list):
         super(_SDNE, self).__init__()
         layer_size_list.insert(0, node_size)
-        self.encoder = _Encoder(layer_size_list)
-        self.decoder = _Decoder(layer_size_list)
+        self.encoder = DenseLayer(layer_size_list)
+        self.decoder = DenseLayer(layer_size_list)
 
     def call(self, inp):
         enc_output = self.encoder(inp)

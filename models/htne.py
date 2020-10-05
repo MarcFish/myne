@@ -4,6 +4,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from .model import Model
+from ..utils import process_dataset
 
 
 class HTNE(Model):
@@ -29,10 +30,13 @@ class HTNE(Model):
 
         self._embedding_matrix = None
 
+        self._gen_dataset()
+
     def train(self):
-        for sign, s, t, edge_times_batch, h_s, h_s_times, h_s_mask in self._get_batch():
-            loss = self.train_step(sign, s, t, edge_times_batch, h_s, h_s_times, h_s_mask)
-            print("Loss {:.4f}".format(tf.reduce_mean(loss)))
+        for epoch in range(self.epochs):
+            for source, target, times, h_s, h_s_times, h_s_mask, nt in self.dataset:
+                loss = self.train_step(source, target, times, h_s, h_s_times, h_s_mask, nt)
+            print("epoch:{} Loss {:.4f}".format(epoch, tf.reduce_mean(loss)))
 
         self._embedding_matrix = self.embeddings.get_weights()[0]
 
@@ -40,34 +44,32 @@ class HTNE(Model):
         return -tf.reduce_sum(tf.math.square(x - y), axis=-1)
 
     def similarity(self, x, y):
-        if type(x) == int:
-            x_embed = tf.reshape(self.get_embedding_node(x), (1,self.embed_size))
-        else:
-            x_embed = self.embeddings(np.asarray(x))
-        if type(y) == int:
-            y_embed = tf.reshape(self.get_embedding_node(y), (1,self.embed_size))
-        else:
-            y_embed = self.embeddings(np.asarray(y))
-        return (-tf.reduce_sum(tf.math.square(x_embed-y_embed), axis=-1)).numpy()
+        x_embed = tf.reshape(self._get_embedding_node(x), (1,self.embed_size))
+        y_embed = tf.reshape(self._get_embedding_node(y), (1,self.embed_size))
+        return (-tf.reduce_sum(tf.math.square(x_embed-y_embed), axis=-1)).numpy()[0]
 
     def g2(self, x, y):
         return -tf.reduce_sum(tf.math.square(tf.expand_dims(x, axis=1) - y), axis=-1)
 
     @tf.function
-    def train_step(self, sign, s, t, edge_times_batch, h_s, h_s_times, h_s_mask):
+    def train_step(self, source, target, times, h_s, h_s_times, h_s_mask, nt):
         with tf.GradientTape(persistent=True) as tape:
-            s_embed = self.embeddings(s)  # batch, embed_size
-            t_embed = self.embeddings(t)  # batch, embed_size
+            s_embed = self.embeddings(source)  # batch, embed_size
+            t_embed = self.embeddings(target)  # batch, embed_size
             h_s_embed = self.embeddings(h_s)  # batch, hist_number, embed_size
+            nt_embed = self.embeddings(nt)  # batch, neg_number, embed_size
 
-            delta = self.delta(s)  # batch,1
-            d_time = tf.expand_dims(edge_times_batch, axis=1)-h_s_times
+            delta = self.delta(source)  # batch,1
+            d_time = tf.expand_dims(times, axis=1)-h_s_times
             p_mu = self.g1(s_embed, t_embed)  # batch,
             alpha = self.g2(s_embed, h_s_embed)  # batch, hist_number
             attn = tf.nn.softmax(alpha, axis=1)  # batch, hist_number
             p_lambda = p_mu + tf.reduce_sum(attn*alpha*tf.math.exp(-delta * d_time)*h_s_mask, axis=-1)  # batch,
 
-            loss = self.loss(p_lambda, sign)
+            n_mu = self.g2(s_embed, nt_embed)  # batch, neg_number
+            n_lambda = tf.reduce_sum(attn*n_mu*tf.math.exp(-delta * d_time), axis=-1)  # batch,
+
+            loss = self.loss(p_lambda, n_lambda)
         gradients = tape.gradient(loss, self.embeddings.trainable_variables)
         delta_gradients = tape.gradient(loss, self.delta.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.embeddings.trainable_variables))
@@ -75,66 +77,59 @@ class HTNE(Model):
 
         return loss
 
-    def loss(self, p_lambda, sign):
-        return -tf.math.log_sigmoid(sign*p_lambda)
+    def loss(self, p_lambda, n_lambda):
+        return -tf.math.log_sigmoid(p_lambda) - tf.math.log_sigmoid(-n_lambda)
 
-    def _get_batch(self):
-        mod_ = 0
-        mod_size = self.neg_number + 1
+    def _gen_dataset(self):
         edge_list = self.g.edge_list
         t = edge_list[:, 2]
         scaler = StandardScaler()
         scaler.fit(t.reshape(-1, 1).astype(np.float32))
-        edge_sample_list = list(range(len(edge_list)))
 
         node_list = self.g.node_list
         node_degrees = np.asarray(self.g.get_nodes_degree_list())
         node_prob = np.power(node_degrees, self.neg_p)
-        node_prob = node_prob/np.sum(node_prob)
+        self.node_prob = node_prob/np.sum(node_prob)
 
-        sign = 0.0
-
-        for epoch in range(self.epochs):
-            if mod_ == 0:
-                sign = 1.0
-                edge_batch = np.random.choice(a=edge_sample_list, size=self.batch)
-                edge_batch = edge_list[edge_batch]
-                edge_times_batch = scaler.transform(edge_batch[:, 2].reshape(-1, 1).astype(np.float32)).squeeze()
-                s = edge_batch[:, 0]
-                t = edge_batch[:, 1]
-                h_s = np.zeros((self.batch, self.hist_number))
-                h_s_times = np.zeros((self.batch, self.hist_number))
-                h_s_mask = np.zeros((self.batch, self.hist_number))
-                for i, x in enumerate(s):
-                    neighbors = np.asarray(self.g.get_node_neighbors(x, with_time=True))
-                    neighbors = np.stack(sorted(neighbors, key=lambda x:x[1]),axis=0)
-                    for j, temp in enumerate(neighbors):
-                        if temp[1] > edge_batch[i, 2]:
-                            break
-                    if j < self.hist_number:
-                        if j==0:
-                            h_s[i][0] = neighbors[0, 0]
-                            h_s_times[i][0] = scaler.transform(neighbors[0, 1].reshape(-1,1).astype(np.float32)).squeeze()
-                            h_s_mask[i][0] = 1
-                        else:
-                            h_s[i][-j:] = neighbors[-j:, 0]
-                            h_s_times[i][-j:] = scaler.transform(neighbors[-j:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
-                            h_s_mask[i][-j:] = 1
-                    else:
-                        h_s[i] = neighbors[-self.hist_number:, 0]
-                        h_s_times[i] = scaler.transform(neighbors[-self.hist_number:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
-                        h_s_mask[i] = 1
+        source = edge_list[:, 0].astype(np.float32)
+        target = edge_list[:, 1].astype(np.float32)
+        times = scaler.transform(edge_list[:, 2].reshape(-1, 1).astype(np.float32)).squeeze()
+        h_s = np.zeros((len(source), self.hist_number)).astype(np.float32)
+        h_s_times = np.zeros((len(source), self.hist_number)).astype(np.float32)
+        h_s_mask = np.zeros((len(source), self.hist_number)).astype(np.float32)
+        for i, s in enumerate(source):
+            neighbors = np.asarray(self.g.get_node_neighbors(s, with_time=True))
+            neighbors = np.stack(sorted(neighbors, key=lambda x:x[1]),axis=0)
+            for j, temp in enumerate(neighbors):
+                if temp[1] > edge_list[i, 2]:
+                    break
+            if j < self.hist_number:
+                if j == 0:
+                    h_s[i][0] = neighbors[0, 0]
+                    h_s_times[i][0] = scaler.transform(neighbors[0, 1].reshape(-1, 1).astype(np.float32)).squeeze()
+                    h_s_mask[i][0] = 1
+                else:
+                    h_s[i][-j:] = neighbors[-j:, 0]
+                    h_s_times[i][-j:] = scaler.transform(neighbors[-j:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
+                    h_s_mask[i][-j:] = 1
             else:
-                sign = -1.0
-                t = np.random.choice(a=node_list, p=node_prob, size=self.batch)
+                h_s[i] = neighbors[-self.hist_number:, 0]
+                h_s_times[i] = scaler.transform(
+                    neighbors[-self.hist_number:, 1].reshape(-1, 1).astype(np.float32)).squeeze()
+                h_s_mask[i] = 1
 
-            yield sign, s, t, edge_times_batch.astype(np.float32), \
-                  h_s.astype(np.int32), h_s_times.astype(np.float32), h_s_mask.astype(np.float32)
-            mod_ += 1
-            mod_ %= mod_size
+        self.dataset = process_dataset(tf.data.Dataset.from_tensor_slices((source, target, times, h_s, h_s_times, h_s_mask)),
+                                       self._gen_neg, self.batch)
+
+    def _gen_neg(self, source, target, times, h_s, h_s_times, h_s_mask):
+        nt = np.random.choice(a=self.g.node_list, p=self.node_prob, size=self.neg_number).astype(np.float32)
+        return source, target, times, h_s, h_s_times, h_s_mask, nt
+
+    def _get_embedding_node(self, node):
+        return self.embeddings(node)
 
     def get_embedding_node(self, node):
-        return self.embeddings(node)
+        return self.embeddings(node).numpy()
 
     @property
     def embedding_matrix(self):

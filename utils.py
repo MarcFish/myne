@@ -4,6 +4,13 @@ from copy import deepcopy
 import random
 import networkx as nx
 import matplotlib.pyplot as plt
+import tensorflow as tf
+
+
+def process_dataset(dataset, parse, batch):
+    return dataset.map(parse,num_parallel_calls=tf.data.experimental.AUTOTUNE) \
+        .batch(batch) \
+        .prefetch(tf.data.experimental.AUTOTUNE)
 
 
 class MapDict:
