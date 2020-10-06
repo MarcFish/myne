@@ -41,9 +41,14 @@ class StaticGraph(Graph):
     def adj(self):
         return self._adj
 
+    @property
+    def adj_csr(self):
+        return self._adj_csr
+
     @adj.setter
     def adj(self, x):
         self._adj = x
+        self._adj_csr = self._adj.tocsr()
 
     @property
     def node_size(self):
@@ -92,6 +97,10 @@ class TemporalGraph(StaticGraph):
     @property
     def adj(self):
         return self._adj
+
+    @property
+    def adj_csr(self):
+        return self._adj_csr
 
     @adj.setter
     def adj(self, x):

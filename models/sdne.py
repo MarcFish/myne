@@ -9,9 +9,9 @@ from ..layers import DenseLayer
 class SDNE(Model):
     def __init__(self, graph,
                  embed_size=128, alpha=0.3, beta=10.0,
-                 epochs=2000, batch=200, lr=0.001, layer_size_list=None):
+                 epochs=200, batch=200, lr=1e-4, layer_size_list=None):
         self.g = graph
-        self.A = self.g.adj.todense().astype(np.float32)  # TODO: sparse represent
+        self.A = self.g.adj_csr
         self.node_size = self.g.node_size
 
         self.embed_size = embed_size
@@ -38,7 +38,7 @@ class SDNE(Model):
     def train(self):
         for epoch in range(self.epochs):
             index = np.random.randint(self.node_size, size=self.batch)
-            adj_batch_train = self.A[index, :]
+            adj_batch_train = self.A[index, :].toarray().astype(np.float32)
             adj_mat_train = adj_batch_train[:, index]
             b_mat_train = np.ones_like(adj_batch_train)
             b_mat_train[adj_batch_train != 0] = self.beta
@@ -49,18 +49,18 @@ class SDNE(Model):
         self.get_embedding_matrix()
 
     def similarity(self, x, y):
-        x_embed = tf.reshape(self.get_embedding_node(x), (1, self.embed_size))
-        y_embed = tf.reshape(self.get_embedding_node(y), (1, self.embed_size))
-        return tf.math.sigmoid(tf.matmul(x_embed, y_embed, transpose_b=True)).numpy()
+        x_embed = self.get_embedding_node(x)
+        y_embed = self.get_embedding_node(y)
+        return x_embed.dot(y_embed)/(np.linalg.norm(x_embed, ord=2)*np.linalg.norm(y_embed, ord=2))
 
-    def get_embedding_matrix(self):  # TODO
-        self._embedding_matrix = np.zeros((self.g.node_number, self.g.node_number))
-        for v, i in self.g.node_list:
-            self._embedding_matrix[i] = self.model(self.A[i])[0].numpy()
+    def get_embedding_matrix(self):
+        self._embedding_matrix = np.zeros((self.g.node_size, self.embed_size))
+        for v in self.g.node_list:
+            self._embedding_matrix[v] = self.get_embedding_node(v)
         return self._embedding_matrix
 
-    def get_embedding_node(self, node):  # TODO
-        embed = self.model(self.A[node])[0].numpy()
+    def get_embedding_node(self, node):
+        embed = self.model.encoder(self.A[node].toarray()).numpy().squeeze()
         return embed
 
     def loss_1(self, A, enc_out):
@@ -92,7 +92,7 @@ class _SDNE(keras.Model):
         super(_SDNE, self).__init__()
         layer_size_list.insert(0, node_size)
         self.encoder = DenseLayer(layer_size_list)
-        self.decoder = DenseLayer(layer_size_list)
+        self.decoder = DenseLayer(reversed(layer_size_list))
 
     def call(self, inp):
         enc_output = self.encoder(inp)
