@@ -2,7 +2,6 @@ from collections import OrderedDict
 import csv
 from copy import deepcopy
 import random
-import networkx as nx
 import matplotlib.pyplot as plt
 
 

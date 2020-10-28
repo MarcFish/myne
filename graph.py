@@ -56,7 +56,7 @@ class StaticGraph(Graph):
 
     @property
     def edge_size(self):
-        return self._adj.nnz
+        return self._adj.nnz // 2
 
     @property
     def node_map(self):
@@ -126,4 +126,3 @@ class TemporalGraph(StaticGraph):
             return np.stack((self._adj_csr[node].indices, self._adj_csr[node].data), axis=-1)
         else:
             return self._adj_csr[node].indices
-
