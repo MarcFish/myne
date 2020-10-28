@@ -32,7 +32,7 @@ class DBLP:
 
 
 class Cora:
-    def __init__(self, adj_file="./data/cora/cora.cites", feature_file="./data/cora/cora.content", prob=0.7):
+    def __init__(self, adj_file="E:/project/NE/data/cora/cora.cites", feature_file="E:/project/NE/data/cora/cora.content", prob=0.7):
         self.g = StaticGraph()
         self.train_g = StaticGraph()
         self.test_g = StaticGraph()
@@ -58,6 +58,7 @@ class Cora:
         # read feature
         # row: node, features, label
         self.feature_matrix = np.zeros(shape=(self.g.node_size, 1433))
+        self.feature_size = 1433
         self.label_matrix = np.zeros(shape=(self.g.node_size,), dtype=np.int32)
         labels = list()
         for row in read_txt(feature_file):
