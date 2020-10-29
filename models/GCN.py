@@ -3,11 +3,8 @@ import tensorflow.keras as keras
 import tensorflow_addons as tfa
 import numpy as np
 import argparse
-import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-from layers import GraphAttention
+from layers import GraphConvolution, GCNFilter
 from data import Cora
 
 parser = argparse.ArgumentParser()
@@ -22,14 +19,14 @@ cora = Cora()
 
 X_in = keras.layers.Input(shape=(cora.feature_size,))
 A_in = keras.layers.Input(shape=(cora.g.node_size,))
-o = GraphAttention(arg.embed_size, dropout_prob=arg.dropout_prob)([X_in, A_in])
-o = keras.layers.Dropout(arg.dropout_prob)(o)
-o = GraphAttention(arg.embed_size, dropout_prob=arg.dropout_prob)([o, A_in])
-o = keras.layers.Dropout(arg.dropout_prob)(o)
-o = GraphAttention(cora.label_size, dropout_prob=arg.dropout_prob, attn_heads=1)([o, A_in])
+A_o = GCNFilter()(A_in)
+o = GraphConvolution(16)([X_in, A_o])
+# o = keras.layers.Dropout(arg.dropout_prob)(o)
+o = GraphConvolution(cora.label_size)([o, A_o])
 
 model = keras.Model(inputs=[X_in, A_in], outputs=o)
-model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.lr), loss=keras.losses.categorical_crossentropy, weighted_metrics=['acc'])
+model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.lr),
+              loss=keras.losses.categorical_crossentropy, weighted_metrics=['acc'])
 model.summary()
 
 X = cora.feature_matrix
