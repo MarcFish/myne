@@ -144,14 +144,13 @@ class GraphConvolution(keras.layers.Layer):
         basis = inputs[1]  # support, node_size, node_size
 
         output = tf.matmul(basis, features)  # support, node_size, feature_size
-        # os = list()
-        # for i in range(self.support):
-        #     os.append(output[i])
-        # output = tf.concat(os, axis=1)
-        output = tf.reshape(output, [tf.shape(basis)[1], -1])
+        os = list()
+        for i in range(self.support):
+            os.append(output[i])
+        output = tf.concat(os, axis=1)
         output = tf.matmul(output, self.kernel)
-        if self.bias:
-            output += self.bias
+        if self.use_bias:
+            output = tf.nn.bias_add(output, self.bias)
         return self.activation(output)
 
 
