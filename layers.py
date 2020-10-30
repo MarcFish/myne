@@ -165,8 +165,8 @@ class GCNFilter(keras.layers.Layer):
             self.process = self._chebyshev
             assert support >= 2
 
-    def build(self, input_shape):
-        self.shape = input_shape[0]
+    def build(self, input_shapes):
+        self.shape = input_shapes[1]
         self.built = True
 
     def call(self, inputs):

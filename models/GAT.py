@@ -11,9 +11,9 @@ from layers import GraphAttention
 from data import Cora
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--embed_size", type=int, default=128)
-parser.add_argument("--lr", type=float, default=1e-3)
-parser.add_argument("--epoch", type=int, default=10)
+parser.add_argument("--embed_size", type=int, default=64)
+parser.add_argument("--lr", type=float, default=1e-4)
+parser.add_argument("--epoch", type=int, default=50)
 parser.add_argument("--dropout_prob", type=float, default=0.3)
 
 arg = parser.parse_args()
@@ -26,10 +26,11 @@ o = GraphAttention(arg.embed_size, dropout_prob=arg.dropout_prob)([X_in, A_in])
 o = keras.layers.Dropout(arg.dropout_prob)(o)
 o = GraphAttention(arg.embed_size, dropout_prob=arg.dropout_prob)([o, A_in])
 o = keras.layers.Dropout(arg.dropout_prob)(o)
-o = GraphAttention(cora.label_size, dropout_prob=arg.dropout_prob, attn_heads=1)([o, A_in])
+o = GraphAttention(cora.label_size, dropout_prob=arg.dropout_prob, attn_heads=1, activation="sigmoid")([o, A_in])
 
 model = keras.Model(inputs=[X_in, A_in], outputs=o)
-model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.lr), loss=keras.losses.categorical_crossentropy, weighted_metrics=['acc'])
+model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.lr),
+              loss=keras.losses.categorical_crossentropy, metrics=['AUC'])
 model.summary()
 
 X = cora.feature_matrix
