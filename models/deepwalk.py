@@ -1,4 +1,3 @@
-from gensim.models import Word2Vec
 import numpy as np
 
 from ..walker import BaseWalker

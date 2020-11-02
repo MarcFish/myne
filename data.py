@@ -1,6 +1,6 @@
-from graph import StaticGraph
+from .graph import StaticGraph
 import numpy as np
-from utils import *
+from .utils import *
 from sklearn.preprocessing import LabelEncoder
 from scipy.sparse import coo_matrix
 
@@ -75,6 +75,7 @@ class Cora:
             label = label_map.transform([row[-1]])[0]
             self.feature_matrix[node] = feature
             self.label_matrix[node] = label
+        self.feature_matrix = self.feature_matrix / self.feature_matrix.sum(1).reshape(-1, 1)
 
     def _split(self, prob=0.7):
         adj = deepcopy(self.g.adj_csr).tolil()

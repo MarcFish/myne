@@ -1,5 +1,6 @@
 import tensorflow.keras as keras
 import tensorflow as tf
+import tensorflow_addons as tfa
 import numpy as np
 
 from .model import Model
@@ -9,7 +10,7 @@ from ..layers import DenseLayer
 class SDNE(Model):
     def __init__(self, graph,
                  embed_size=128, alpha=0.3, beta=10.0,
-                 epochs=200, batch=200, lr=1e-4, layer_size_list=None):
+                 epochs=200, batch=200, lr=1e-3, l2=1e-4, layer_size_list=None, dropout_prob=0.1):
         self.g = graph
         self.A = self.g.adj_csr
         self.node_size = self.g.node_size
@@ -20,14 +21,15 @@ class SDNE(Model):
         self.epochs = epochs
         self.batch = batch
         self.lr = lr
+        self.l2 = l2
 
         if layer_size_list is None:
             self.layer_size_list = [32, 64, 128, self.embed_size]
         else:
             self.layer_size_list = layer_size_list
 
-        self.model = _SDNE(self.node_size, self.layer_size_list)
-        self.optimizer = keras.optimizers.Adam(self.lr)
+        self.model = _SDNE(self.node_size, self.layer_size_list, dropout_prob)
+        self.optimizer = tfa.optimizers.AdamW(self.lr, self.l2)
 
         self._embedding_matrix = None
 
@@ -88,16 +90,14 @@ class SDNE(Model):
 
 
 class _SDNE(keras.Model):
-    def __init__(self, node_size, layer_size_list):
+    def __init__(self, node_size, layer_size_list, dropout_prob):
         super(_SDNE, self).__init__()
         layer_size_list.insert(0, node_size)
-        self.encoder = DenseLayer(layer_size_list)
-        self.decoder = DenseLayer(reversed(layer_size_list))
+        self.encoder = DenseLayer(layer_size_list, dropout_prob)
+        self.decoder = DenseLayer(reversed(layer_size_list), dropout_prob)
 
     def call(self, inp):
         enc_output = self.encoder(inp)
         dec_output = self.decoder(enc_output)
 
         return enc_output, dec_output
-
-

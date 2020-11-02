@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from .model import Model
-from ..utils import process_dataset
 
 
 class HTNE(Model):

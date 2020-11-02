@@ -7,10 +7,10 @@ class DenseLayer(keras.layers.Layer):
         super(DenseLayer, self).__init__()
         self.layers = keras.Sequential()
         for unit in units:
+            self.layers.add(keras.layers.Dropout(dropout_prob))
             self.layers.add(keras.layers.Dense(units=unit))
             self.layers.add(keras.layers.LeakyReLU(0.2))
             self.layers.add(keras.layers.LayerNormalization())
-            self.layers.add(keras.layers.Dropout(dropout_prob))
 
     def call(self, inputs):
         o = self.layers(inputs)
@@ -25,16 +25,15 @@ class ResidualLayer(keras.layers.Layer):
         self.unit1s = unit1s
         self.unit2s = unit2s
         for unit in unit1s:
+            self.layer1.add(keras.layers.Dropout(dropout_prob))
             self.layer1.add(keras.layers.Dense(units=unit))
             self.layer1.add(keras.layers.LeakyReLU(0.2))
             self.layer1.add(keras.layers.LayerNormalization())
-            self.layer1.add(keras.layers.Dropout(dropout_prob))
-
         for unit in unit2s:
+            self.layer2.add(keras.layers.Dropout(dropout_prob))
             self.layer2.add(keras.layers.Dense(units=unit))
             self.layer2.add(keras.layers.LeakyReLU(0.2))
             self.layer2.add(keras.layers.LayerNormalization())
-            self.layer2.add(keras.layers.Dropout(dropout_prob))
         self.leakyrelu = keras.layers.LeakyReLU(0.2)
         self.ln = keras.layers.LayerNormalization()
         self.drop = keras.layers.Dropout(dropout_prob)
@@ -54,7 +53,7 @@ class ResidualLayer(keras.layers.Layer):
 
 
 class GraphAttention(keras.layers.Layer):
-    def __init__(self, feature_size, attn_heads=8, dropout_prob=0.5, activation="relu"):
+    def __init__(self, feature_size, attn_heads=8, dropout_prob=0.5, activation="elu"):
         super(GraphAttention, self).__init__()
         self.feature_size = feature_size
         self.attn_heads = attn_heads
