@@ -2,6 +2,7 @@ from collections import OrderedDict
 import csv
 from copy import deepcopy
 import random
+from sklearn.svm import SVC
 import numpy as np
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
@@ -125,3 +126,10 @@ def embed_visual(embedding_matrix, label_array=None):
             plt.scatter(x[:, 0], x[:, 1], label=label)
             plt.legend()
             plt.show()
+
+
+def svm(embedding_matrix, label_array):
+    c = SVC()
+    c.fit(embedding_matrix, label_array)
+    print(f"mean accuracy :{c.score(embedding_matrix, label_array)}")
+    return c

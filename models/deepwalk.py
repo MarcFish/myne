@@ -1,5 +1,5 @@
 import numpy as np
-
+from gensim.models import Word2Vec
 from ..walker import BaseWalker
 from .model import Model
 
@@ -31,11 +31,6 @@ class DeepWalk(Model):
         self.wv = Word2Vec(**kwargs)
 
         self.get_embedding_matrix()
-
-    def similarity(self, x, y):
-        x_embed = self.get_embedding_node(x).reshape(-1, 1)
-        y_embed = self.get_embedding_node(y).reshape(-1, 1)
-        return x_embed.dot(y_embed)/(np.linalg.norm(x_embed, ord=2)*np.linalg.norm(y_embed, ord=2))
 
     def get_embedding_node(self, node):
         return self._embedding_matrix[node]

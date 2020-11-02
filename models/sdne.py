@@ -39,21 +39,17 @@ class SDNE(Model):
 
     def train(self):
         for epoch in range(self.epochs):
-            index = np.random.randint(self.node_size, size=self.batch)
-            adj_batch_train = self.A[index, :].toarray().astype(np.float32)
-            adj_mat_train = adj_batch_train[:, index]
-            b_mat_train = np.ones_like(adj_batch_train)
-            b_mat_train[adj_batch_train != 0] = self.beta
-            loss = self.train_step(adj_batch_train, adj_mat_train, b_mat_train)
+            for batch_num in range(self.node_size // self.batch):
+                start_index = batch_num * self.batch
+                end_index = min((batch_num + 1) * self.batch, self.node_size)
+                adj_batch_train = self.A[start_index:end_index, :].toarray().astype(np.float32)
+                adj_mat_train = adj_batch_train[:, start_index:end_index]
+                b_mat_train = np.ones_like(adj_batch_train).astype(np.float32)
+                b_mat_train[adj_batch_train != 0] = self.beta
+                loss = self.train_step(adj_batch_train, adj_mat_train, b_mat_train)
 
-            if epoch % 200 == 0:
-                print('Epoch {} Loss {:.4f}'.format(epoch, loss))
+            print('Epoch {} Loss {:.4f}'.format(epoch, loss))
         self.get_embedding_matrix()
-
-    def similarity(self, x, y):
-        x_embed = self.get_embedding_node(x)
-        y_embed = self.get_embedding_node(y)
-        return x_embed.dot(y_embed)/(np.linalg.norm(x_embed, ord=2)*np.linalg.norm(y_embed, ord=2))
 
     def get_embedding_matrix(self):
         self._embedding_matrix = np.zeros((self.g.node_size, self.embed_size))
