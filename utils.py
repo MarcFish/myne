@@ -2,6 +2,8 @@ from collections import OrderedDict
 import csv
 from copy import deepcopy
 import random
+import numpy as np
+from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 
@@ -108,4 +110,18 @@ def read_txt(filename):
 def scatter2d(x, y):
     plt.scatter(x, y)
     plt.show()
-    return plt
+    return
+
+
+def embed_visual(embedding_matrix, label_array=None):
+    x_embed = TSNE(n_components=2).fit_transform(embedding_matrix)
+    if label_array is None:
+        scatter2d(x_embed[:, 0], x_embed[:, 1])
+    else:
+        label_set = set(label_array)
+        plt.figure()
+        for label in label_set:
+            x = x_embed[np.where(label_array == label)[0]]
+            plt.scatter(x[:, 0], x[:, 1], label=label)
+            plt.legend()
+            plt.show()
