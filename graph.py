@@ -1,6 +1,7 @@
 import numpy as np
 import abc
 from scipy.sparse import coo_matrix
+import scipy.sparse as sp
 from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 
@@ -76,9 +77,13 @@ class StaticGraph(Graph):
         self._node_map.fit(list(node_set))
         file['x'] = self._node_map.transform(file['x'])  # TODO
         file['y'] = self._node_map.transform(file['y'])
-        self._adj = coo_matrix((np.ones(len(file['x'])), (file['x'].values,
-                                                            file['y'].values)), shape=(len(node_set), len(node_set)))
-        self._adj_csr = self._adj.tocsr()
+        x_ = file['x'].values
+        y_ = file['y'].values
+        x = np.concatenate([x_, y_])
+        y = np.concatenate([y_, x_])
+        self._adj = coo_matrix((np.ones(len(file['x']) * 2), (x, y)), shape=(len(node_set), len(node_set)))
+        self._adj_csr = self._adj.tocsr() + sp.eye(len(node_set))
+        self._adj = self._adj_csr.tocoo()
 
     def get_node_neighbors(self, node):
         return self._adj_csr[node].indices

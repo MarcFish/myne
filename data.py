@@ -1,12 +1,14 @@
 from .graph import StaticGraph
 import numpy as np
+import scipy.sparse as sp
+from copy import deepcopy
 from .utils import *
 from sklearn.preprocessing import LabelEncoder
 from scipy.sparse import coo_matrix
 
 
 class DBLP:
-    def __init__(self, path="./data/dblp/dblp_20.csv", prob=0.7):
+    def __init__(self, path="E:/project/NE/data/dblp/dblp_20.csv", prob=0.7):
         self.g = StaticGraph()
         self.g.read_from_file(path)
 
@@ -51,8 +53,13 @@ class Cora:
         self.g._node_map = node_map
         xs = node_map.transform(xs)
         ys = node_map.transform(ys)
+        x = np.concatenate([xs, ys])
+        y = np.concatenate([ys, xs])
 
-        self.g.adj = coo_matrix((np.ones(len(xs)), (xs, ys)), shape=(len(node_map.classes_), len(node_map.classes_)))
+        adj = coo_matrix((np.ones(len(xs)*2), (x, y)), shape=(len(node_map.classes_), len(node_map.classes_)))
+        adj = adj.tocsr() + sp.eye(len(node_map.classes_))
+        adj = adj.tocoo()
+        self.g.adj = adj
         self._split(prob)
 
         # read feature

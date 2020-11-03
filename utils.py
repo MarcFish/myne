@@ -1,6 +1,6 @@
 from collections import OrderedDict
+import collections
 import csv
-from copy import deepcopy
 import random
 from sklearn.svm import SVC
 import numpy as np
@@ -133,3 +133,28 @@ def svm(embedding_matrix, label_array):
     c.fit(embedding_matrix, label_array)
     print(f"mean accuracy :{c.score(embedding_matrix, label_array)}")
     return c
+
+
+def generate_word(sentences, num_skips=2, skip_window=2):  # generate train data for word2vec from sentences
+    batch = np.ndarray(shape=(len(sentences)*len(sentences[0])*num_skips,), dtype=np.int64)
+    label = np.ndarray(shape=(len(sentences)*len(sentences[0])*num_skips, 1), dtype=np.int64)
+    span = 2*skip_window + 1
+    buffer = collections.deque(maxlen=span)
+    for s, sentence in enumerate(sentences):
+        data_index = 0
+        buffer.clear()
+        for _ in range(span):
+            buffer.append(sentence[data_index])
+            data_index = (data_index + 1) % len(sentence)
+        for i in range(len(sentence)):
+            target = skip_window
+            targets_to_avoid = [skip_window]
+            for j in range(num_skips):
+                while target in targets_to_avoid:
+                    target = random.randint(0, span - 1)
+                targets_to_avoid.append(target)
+                batch[s * len(sentence) * num_skips + i * num_skips + j] = buffer[skip_window]
+                label[s * len(sentence) * num_skips + i * num_skips + j, 0] = buffer[target]
+            buffer.append(sentence[data_index])
+            data_index = (data_index + 1) % len(sentence)
+    return batch, label

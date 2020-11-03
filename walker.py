@@ -42,4 +42,4 @@ class BaseWalker:
                 walk.append(random.choice(cur_nbrs))
             else:
                 break
-        return list(map(str, walk))
+        return walk
