@@ -29,8 +29,8 @@ class Word2Vec(keras.Model):
                                              num_classes=self.word_size))
 
     def call(self, inputs):
-        # when fit embed will is batch, 1, embed_size, but when call
-        # embed will is batch, embed_size
+        # when fit, shape of embed will be batch, 1, embed_size, but when call
+        # shape of embed will be batch, embed_size
         # TODO
         embed = tf.squeeze(self.embedding(inputs))
         return embed
