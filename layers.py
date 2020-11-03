@@ -191,3 +191,29 @@ class GCNFilter(keras.layers.Layer):
             out.append(o)
         out = tf.stack(out)
         return out
+
+
+class Bilinear(keras.layers.Layer):
+    def __init__(self, unit, activation='elu', use_bias=True):
+        super(Bilinear, self).__init__()
+        self.unit = unit
+        self.activation = keras.activations.get(activation)
+        self.use_bias = use_bias
+
+    def build(self, input_shape):
+        assert len(input_shape) != 2
+        i1 = input_shape[0][-1]
+        i2 = input_shape[1][-1]
+        self.kernel = self.add_weight(shape=(i1, i2, self.unit))
+        if self.use_bias:
+            self.bias = self.add_weight(shape=(self.unit,))
+        self.built = True
+
+    def call(self, inputs):
+        i1 = inputs[0]  # batch, embed_size
+        i2 = inputs[1]  # batch, embed_size
+        output = tf.einsum("bi,bj,ijk->bk", i1, i2, self.kernel)
+        if self.use_bias:
+            output = tf.nn.bias_add(output, self.bias)
+        output = self.activation(output)
+        return output
