@@ -21,7 +21,7 @@ class Word2Vec(keras.Model):
         self.built = True
 
     def loss(self, labels, embed):
-        return tf.reduce_mean(tf.nn.nce_loss(weights=self.nce_weights,
+        return tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self.nce_weights,
                                              biases=self.nce_biases,
                                              inputs=embed,
                                              labels=labels,
