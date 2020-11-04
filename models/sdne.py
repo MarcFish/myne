@@ -10,7 +10,7 @@ from ..layers import DenseLayer
 class SDNE(Model):
     def __init__(self, graph,
                  embed_size=128, alpha=0.3, beta=10.0,
-                 epochs=200, batch=200, lr=1e-3, l2=1e-4, layer_size_list=None, dropout_prob=0.1):
+                 epochs=200, batch_size=200, lr=1e-3, l2=1e-4, layer_size_list=None, dropout_prob=0.1):
         self.g = graph
         self.A = self.g.adj_csr
         self.node_size = self.g.node_size
@@ -19,7 +19,7 @@ class SDNE(Model):
         self.alpha = alpha
         self.beta = beta
         self.epochs = epochs
-        self.batch = batch
+        self.batch_size = batch_size
         self.lr = lr
         self.l2 = l2
 
@@ -39,9 +39,9 @@ class SDNE(Model):
 
     def train(self):
         for epoch in range(self.epochs):
-            for batch_num in range(self.node_size // self.batch):
-                start_index = batch_num * self.batch
-                end_index = min((batch_num + 1) * self.batch, self.node_size)
+            for batch_num in range(self.node_size // self.batch_size):
+                start_index = batch_num * self.batch_size
+                end_index = min((batch_num + 1) * self.batch_size, self.node_size)
                 adj_batch_train = self.A[start_index:end_index, :].toarray().astype(np.float32)
                 adj_mat_train = adj_batch_train[:, start_index:end_index]
                 b_mat_train = np.ones_like(adj_batch_train).astype(np.float32)
