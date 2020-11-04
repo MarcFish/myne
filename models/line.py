@@ -69,7 +69,7 @@ class _LINE(keras.Model):
         self.built = True
 
     def loss1(self, labels, embed):
-        loss = tf.reduce_mean(tf.nn.nce_loss(weights=self.embedding,
+        loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self.embedding,
                                                  biases=self.biases,
                                                  inputs=embed,
                                                  labels=labels,
@@ -78,7 +78,7 @@ class _LINE(keras.Model):
         return loss
 
     def lossh(self, labels, embed):
-        loss = tf.reduce_mean(tf.nn.nce_loss(weights=self.context_embedding,
+        loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self.context_embedding,
                                                  biases=self.biases,
                                                  inputs=embed,
                                                  labels=labels,
