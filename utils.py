@@ -125,7 +125,7 @@ def embed_visual(embedding_matrix, label_array=None):
             x = x_embed[np.where(label_array == label)[0]]
             plt.scatter(x[:, 0], x[:, 1], label=label)
             plt.legend()
-            plt.show()
+        plt.show()
 
 
 def svm(embedding_matrix, label_array):
