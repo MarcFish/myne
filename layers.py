@@ -53,7 +53,8 @@ class ResidualLayer(keras.layers.Layer):
 
 
 class GraphAttention(keras.layers.Layer):
-    def __init__(self, feature_size, attn_heads=8, dropout_prob=0.5, activation="elu"):
+    def __init__(self, feature_size, attn_heads=8, dropout_prob=0.3, activation="elu",
+                 attn_heads_reduction='concat'):
         super(GraphAttention, self).__init__()
         self.feature_size = feature_size
         self.attn_heads = attn_heads
@@ -63,6 +64,8 @@ class GraphAttention(keras.layers.Layer):
         self.kernels = list()
         self.biases = list()
         self.attn_kernels = list()
+
+        self.attn_heads_reduction = attn_heads_reduction
 
     def build(self, input_shape):  # X, A
         input_feature_size = input_shape[0][-1]
@@ -86,6 +89,7 @@ class GraphAttention(keras.layers.Layer):
             kernel = self.kernels[head]
             attention_kernel = self.attn_kernels[head]
 
+            X = keras.layers.Dropout(self.dropout_prob)(X)
             features = tf.matmul(X, kernel)
 
             attn_for_self = tf.matmul(features, attention_kernel[0])
@@ -97,11 +101,6 @@ class GraphAttention(keras.layers.Layer):
             dense += mask
             dense = tf.nn.softmax(dense)
 
-            # Mask values before activation (Vaswani et al., 2017)
-            mask = -10e9 * (1.0 - A)
-            dense += mask
-
-            dense = tf.nn.softmax(dense)
             dropout_attn = tf.keras.layers.Dropout(self.dropout_prob)(dense)
             dropout_feat = tf.keras.layers.Dropout(self.dropout_prob)(features)
 
@@ -110,11 +109,13 @@ class GraphAttention(keras.layers.Layer):
             node_features = tf.nn.bias_add(node_features, self.biases[head])
 
             # Add output of attention head to final output
-            outputs.append(node_features)
+            output = self.activation(node_features)
+            outputs.append(output)
 
-        output = tf.reduce_mean(tf.stack(outputs), axis=0)
-
-        output = self.activation(output)
+        if self.attn_heads_reduction == 'concat':
+            output = tf.concat(outputs, axis=-1)
+        else:
+            output = tf.reduce_mean(tf.stack(outputs), axis=0)
         return output
 
 
