@@ -218,3 +218,51 @@ class Bilinear(keras.layers.Layer):
             output = tf.nn.bias_add(output, self.bias)
         output = self.activation(output)
         return output
+    
+    
+class MeanAggregator(keras.layers.Layer):
+    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True):
+        super(MeanAggregator, self).__init__()
+        self.unit = unit
+        self.activation = keras.activations.get(activation)
+        self.concat = concat
+        self.dropout_prob = dropout_prob
+        self.use_bias = use_bias
+
+    def build(self, input_shape):
+        self_unit = input_shape[0][-1]
+        neigh_unit = input_shape[1][-1]
+        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit))
+        self.self_weights = self.add_weight(shape=(self_unit, self.unit))
+        if self.use_bias:
+            if self.concat:
+                self.biases = self.add_weight(shape=(2 * self.unit,))
+            else:
+                self.biases = self.add_weight(shape=(self.unit, ))
+        self.built = True
+
+    def call(self, inputs):
+        self_vec = inputs[0]  # batch, embed_size
+        neigh_vec = inputs[1]  # batch, neigh_samples, embed_size
+        self_vec = keras.layers.Dropout(self.dropout_prob)(self_vec)
+        neigh_vec = keras.layers.Dropout(self.dropout_prob)(neigh_vec)
+
+        neigh_means = tf.reduce_mean(neigh_vec, axis=1)  # batch, embed_size
+        from_neighs = tf.matmul(neigh_means, self.neigh_weights)  # batch, unit
+        from_self = tf.matmul(self_vec, self.self_weights)  # batch, unit
+
+        if not self.concat:
+            output = tf.add_n([from_self, from_neighs])
+        else:
+            output = tf.concat([from_self, from_neighs], axis=-1)
+
+        if self.use_bias:
+            output += self.biases
+
+        return self.activation(output)
+
+    def compute_output_shape(self, input_shape):
+        if self.concat:
+            return (None, self.unit * 2)
+        else:
+            return (None, self.unit)
