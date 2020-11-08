@@ -4,12 +4,12 @@ import tensorflow_addons as tfa
 import numpy as np
 
 from .model import Model
-from ..layers import MeanAggregator
+from ..layers import MeanAggregator, LSTMAggregator
 
 
 class _UnSupervisedGraphSage(keras.Model):
     def __init__(self, node_size, layer_size_list, concat=False, embed_size=128, feature=None,
-                 mode="feature", dropout_prob=0.3, neg_samples=5):
+                 mode="feature", dropout_prob=0.3, neg_samples=5, aggreator="mean"):
         super(_UnSupervisedGraphSage, self).__init__()
         self.node_size = node_size
         self.embed_size = embed_size
@@ -27,6 +27,7 @@ class _UnSupervisedGraphSage(keras.Model):
         self.dropout_prob = dropout_prob
         self.concat = concat
         self.neg_samples = neg_samples
+        self.aggreator = aggreator
 
     def build(self, input_shape):
         if self.mode == "feature":
@@ -38,7 +39,10 @@ class _UnSupervisedGraphSage(keras.Model):
                                       initializer=keras.initializers.zeros())
         out_size = self.embed_size
         for layer_size in self.layer_size_list:
-            hidden = MeanAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
+            if self.aggreator == "mean":
+                hidden = MeanAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
+            else:
+                hidden = LSTMAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
             hidden.build([(None, out_size), (None, None, self.embed_size)])
             _, out_size = hidden.compute_output_shape(input_shape)
             self.hidden.append(hidden)
@@ -75,7 +79,7 @@ class _UnSupervisedGraphSage(keras.Model):
 
 class UnSupervisedGraphSage(Model):
     def __init__(self, graph, feature=None, mode="feature", feature_size=128, batch_size=200, lr=1e-3, l2=1e-4, dropout_prob=0.3, neigh_samples=25,
-                 neg_samples=20, epochs=10, layer_size_list=[128, 256, 512], concat=False):
+                 neg_samples=20, epochs=10, layer_size_list=[128, 256, 512], concat=False, aggreator="mean"):
         self.g = graph
         self.feature_size = feature_size
         self.batch_size = batch_size
@@ -88,9 +92,9 @@ class UnSupervisedGraphSage(Model):
         self.neigh_samples = neg_samples
         self.mode = mode
         if mode == "feature":
-            self.model = _UnSupervisedGraphSage(self.g.node_size, layer_size_list, concat, feature=feature, mode=mode, dropout_prob=dropout_prob)
+            self.model = _UnSupervisedGraphSage(self.g.node_size, layer_size_list, concat, feature=feature, mode=mode, dropout_prob=dropout_prob, aggreator=aggreator)
         else:
-            self.model = _UnSupervisedGraphSage(self.g.node_size, layer_size_list, concat, embed_size=feature_size, mode=mode, dropout_prob=dropout_prob)
+            self.model = _UnSupervisedGraphSage(self.g.node_size, layer_size_list, concat, embed_size=feature_size, mode=mode, dropout_prob=dropout_prob, aggreator=aggreator)
         self.model.compile(loss=self.model.loss,
                            optimizer=tfa.optimizers.AdamW(learning_rate=self.lr, weight_decay=self.l2))
 
@@ -138,7 +142,7 @@ class UnSupervisedGraphSage(Model):
 
 class _SupervisedGraphSage(keras.Model):
     def __init__(self, node_size, layer_size_list, label_size, concat=False, embed_size=None, feature=None,
-                 mode="feature", dropout_prob=0.3, activation="sigmoid"):
+                 mode="feature", dropout_prob=0.3, activation="sigmoid", aggreator="mean"):
         super(_SupervisedGraphSage, self).__init__()
         self.node_size = node_size
         self.embed_size = embed_size
@@ -155,6 +159,7 @@ class _SupervisedGraphSage(keras.Model):
         self.label_size = label_size
         self.activation = keras.activations.get(activation)
         self.concat = concat
+        self.aggreator = aggreator
 
     def build(self, input_shape):
         if self.mode == "feature":
@@ -164,7 +169,10 @@ class _SupervisedGraphSage(keras.Model):
                                              initializer=keras.initializers.HeUniform())
         out_size = self.embed_size
         for layer_size in self.layer_size_list:
-            hidden = MeanAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
+            if self.aggreator == "mean":
+                hidden = MeanAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
+            else:
+                hidden = LSTMAggregator(layer_size, dropout_prob=self.dropout_prob, concat=self.concat)
             hidden.build([(None, out_size), (None, None, self.embed_size)])
             _, out_size = hidden.compute_output_shape(input_shape)
             self.hidden.append(hidden)
@@ -185,7 +193,7 @@ class _SupervisedGraphSage(keras.Model):
 
 class SupervisedGraphSage(Model):
     def __init__(self, graph, label_size, label_matrix, feature=None, mode="feature", feature_size=128, batch_size=200, lr=1e-3,
-                 l2=1e-4, dropout_prob=0.3, neigh_samples=25, epochs=10, layer_size_list=[128,128,128], concat=True):
+                 l2=1e-4, dropout_prob=0.3, neigh_samples=25, epochs=10, layer_size_list=[128,128,128], concat=True, aggreator="mean"):
         self.g = graph
         self.feature_size = feature_size
         self.batch_size = batch_size
@@ -198,9 +206,9 @@ class SupervisedGraphSage(Model):
         self.epochs = epochs
         self.layer_size_list = layer_size_list
         if mode == "feature":
-            self.model = _SupervisedGraphSage(self.g.node_size, layer_size_list, label_size, concat, feature=feature, mode=mode, dropout_prob=dropout_prob)
+            self.model = _SupervisedGraphSage(self.g.node_size, layer_size_list, label_size, concat, feature=feature, mode=mode, dropout_prob=dropout_prob, aggreator=aggreator)
         else:
-            self.model = _SupervisedGraphSage(self.g.node_size, layer_size_list, label_size, concat, embed_size=feature_size, mode=mode, dropout_prob=dropout_prob)
+            self.model = _SupervisedGraphSage(self.g.node_size, layer_size_list, label_size, concat, embed_size=feature_size, mode=mode, dropout_prob=dropout_prob, aggreator=aggreator)
         self.model.compile(loss='categorical_crossentropy',
                            optimizer=tfa.optimizers.AdamW(learning_rate=self.lr, weight_decay=self.l2),
                            metrics=['categorical_accuracy'])
