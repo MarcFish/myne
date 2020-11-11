@@ -315,3 +315,17 @@ class LSTMAggregator(keras.layers.Layer):
             return (None, self.unit * 2)
         else:
             return (None, self.unit)
+
+
+class GCRN1(keras.layers.AbstractRNNCell):
+    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.0, recurrent_dropout_prob=0.0):
+        self.units = units
+        self.activation = activation
+        self.recurrent_activation = recurrent_activation
+        self.use_bias = use_bias
+        self.dropout_prob = dropout_prob
+        self.recurrent_dropout_prob = recurrent_dropout_prob
+
+    def build(self, input_shape):
+        self.built = True
