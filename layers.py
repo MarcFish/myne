@@ -312,9 +312,57 @@ class LSTMAggregator(keras.layers.Layer):
 
     def compute_output_shape(self, input_shape):
         if self.concat:
-            return (None, self.unit * 2)
+            return None, self.unit * 2
         else:
-            return (None, self.unit)
+            return None, self.unit
+
+
+class GRUCell(keras.layers.AbstractRNNCell):
+    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
+                 kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
+                 bias_initializer='ones',):
+        super(GRUCell, self).__init__()
+        self.units = units
+        self.activation = keras.activations.get(activation)
+        self.recurrent_activation = keras.activations.get(recurrent_activation)
+        self.use_bias = use_bias
+        self.dropout_prob = dropout_prob
+        self.recurrent_dropout_prob = recurrent_dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.recurrent_initializer = recurrent_initializer
+        self.bias_initializer = bias_initializer
+    
+    def build(self, input_shape):
+        self.Wz = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uz = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bz = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wr = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Ur = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.br = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wh = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uh = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bh = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+
+    def call(self, input_at_t, states_at_t):  # batch, embed_size;batch, units *seq_len;
+        state_at_t = keras.layers.Dropout(self.dropout_prob)(states_at_t[0])  # batch, units
+        input_at_t = keras.layers.Dropout(self.dropout_prob)(input_at_t)
+        zt = self.recurrent_activation(tf.matmul(input_at_t, self.Wz) + tf.matmul(state_at_t, self.Uz) + self.bz)
+        zt = keras.layers.Dropout(self.recurrent_dropout_prob)(zt)
+
+        rt = self.recurrent_activation(tf.matmul(input_at_t, self.Wr) + tf.matmul(state_at_t, self.Ur) + self.br)
+        rt = keras.layers.Dropout(self.recurrent_dropout_prob)(rt)
+
+        ht_ = self.recurrent_activation(tf.matmul(input_at_t, self.Wh) + tf.matmul(state_at_t * rt, self.Uh) + self.bh)
+        ht_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ht_)
+
+        ht = (1 - zt) * state_at_t + zt * ht_
+        ht = keras.layers.Dropout(self.dropout_prob)(ht)
+        return ht, ht
+    
+    @property
+    def state_size(self):
+        return self.units
 
 
 class GCRN1(keras.layers.AbstractRNNCell):
