@@ -3,13 +3,22 @@ import tensorflow.keras as keras
 
 
 class DenseLayer(keras.layers.Layer):
-    def __init__(self, units, dropout_prob=0.1):
+    def __init__(self, units, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(DenseLayer, self).__init__()
         self.layers = keras.Sequential()
-        for unit in units:
-            self.layers.add(keras.layers.Dropout(dropout_prob))
-            self.layers.add(keras.layers.Dense(units=unit))
-            self.layers.add(keras.layers.LeakyReLU(0.2))
+        self.dropout_prob = dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.units = units
+        self.activation = activation
+
+    def build(self, input_shape):
+        for unit in self.units:
+            self.layers.add(keras.layers.Dropout(self.dropout_prob))
+            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
+                                               kernel_initializer=self.kernel_initializer,
+                                               bias_initializer=self.bias_initializer))
             self.layers.add(keras.layers.LayerNormalization())
 
     def call(self, inputs):
@@ -18,25 +27,31 @@ class DenseLayer(keras.layers.Layer):
 
 
 class ResidualLayer(keras.layers.Layer):
-    def __init__(self, unit1s, unit2s, dropout_prob=0.1):
+    def __init__(self, unit1s, unit2s, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(ResidualLayer, self).__init__()
         self.layer1 = keras.Sequential()
         self.layer2 = keras.Sequential()
         self.unit1s = unit1s
         self.unit2s = unit2s
-        for unit in unit1s:
-            self.layer1.add(keras.layers.Dropout(dropout_prob))
-            self.layer1.add(keras.layers.Dense(units=unit))
-            self.layer1.add(keras.layers.LeakyReLU(0.2))
-            self.layer1.add(keras.layers.LayerNormalization())
-        for unit in unit2s:
-            self.layer2.add(keras.layers.Dropout(dropout_prob))
-            self.layer2.add(keras.layers.Dense(units=unit))
-            self.layer2.add(keras.layers.LeakyReLU(0.2))
-            self.layer2.add(keras.layers.LayerNormalization())
-        self.leakyrelu = keras.layers.LeakyReLU(0.2)
-        self.ln = keras.layers.LayerNormalization()
-        self.drop = keras.layers.Dropout(dropout_prob)
+        self.dropout_prob = dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+        self.activation = keras.activations.get(activation)
+
+    def build(self, input_shape):
+        for unit in self.unit1s:
+            self.layers.add(keras.layers.Dropout(self.dropout_prob))
+            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
+                                               kernel_initializer=self.kernel_initializer,
+                                               bias_initializer=self.bias_initializer))
+            self.layers.add(keras.layers.LayerNormalization())
+        for unit in self.unit2s:
+            self.layers.add(keras.layers.Dropout(self.dropout_prob))
+            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
+                                               kernel_initializer=self.kernel_initializer,
+                                               bias_initializer=self.bias_initializer))
+            self.layers.add(keras.layers.LayerNormalization())
 
     def build(self, input_shape):
         if input_shape[-1] != self.unit2s[-1]:
@@ -46,20 +61,22 @@ class ResidualLayer(keras.layers.Layer):
     def call(self, inputs):
         x = self.layer1(inputs)
         x = self.layer2(x)
-        outputs = self.leakyrelu(x + inputs)
-        outputs = self.ln(outputs)
-        outputs = self.drop(outputs)
+        outputs = self.activation(x + inputs)
         return outputs
 
 
 class GraphAttention(keras.layers.Layer):
     def __init__(self, feature_size, attn_heads=8, dropout_prob=0.3, activation="elu",
-                 attn_heads_reduction='concat'):
+                 attn_heads_reduction='concat', kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(GraphAttention, self).__init__()
         self.feature_size = feature_size
         self.attn_heads = attn_heads
         self.activation = keras.activations.get(activation)
         self.dropout_prob = dropout_prob
+
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
 
         self.kernels = list()
         self.biases = list()
@@ -70,12 +87,12 @@ class GraphAttention(keras.layers.Layer):
     def build(self, input_shape):  # X, A
         input_feature_size = input_shape[0][-1]
         for head in range(self.attn_heads):
-            kernel = self.add_weight(shape=(input_feature_size, self.feature_size))
+            kernel = self.add_weight(shape=(input_feature_size, self.feature_size), initializer=self.kernel_initializer)
             self.kernels.append(kernel)
-            bias = self.add_weight(shape=(self.feature_size,))
+            bias = self.add_weight(shape=(self.feature_size,), initializer=self.bias_initializer)
             self.biases.append(bias)
-            attn_kernel_self = self.add_weight(shape=(self.feature_size, 1))
-            attn_kernel_neighs = self.add_weight(shape=(self.feature_size, 1))
+            attn_kernel_self = self.add_weight(shape=(self.feature_size, 1), initializer=self.kernel_initializer)
+            attn_kernel_neighs = self.add_weight(shape=(self.feature_size, 1), initializer=self.kernel_initializer)
             self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
 
         self.built = True
@@ -121,11 +138,15 @@ class GraphAttention(keras.layers.Layer):
 
 class GraphConvolution(keras.layers.Layer):
     """Basic graph convolution layer as in https://arxiv.org/abs/1609.02907"""
-    def __init__(self, units, activation='relu', use_bias=True):
+    def __init__(self, units, activation='relu', use_bias=True, kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(GraphConvolution, self).__init__()
         self.units = units
         self.activation = keras.activations.get(activation)
         self.use_bias = use_bias
+
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
 
     def build(self, input_shapes):  # X, A
         features_shape = input_shapes[0]
@@ -134,9 +155,9 @@ class GraphConvolution(keras.layers.Layer):
         input_dim = features_shape[1]
         support = adjoint_shape[0]
         self.support = support
-        self.kernel = self.add_weight(shape=(input_dim * support, self.units))
+        self.kernel = self.add_weight(shape=(input_dim * support, self.units), initializer=self.kernel_initializer)
         if self.use_bias:
-            self.bias = self.add_weight(shape=(self.units,))
+            self.bias = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
         self.built = True
 
     def call(self, inputs):  # X, A
@@ -195,19 +216,23 @@ class GCNFilter(keras.layers.Layer):
 
 
 class Bilinear(keras.layers.Layer):
-    def __init__(self, unit, activation='elu', use_bias=True):
+    def __init__(self, unit, activation='elu', use_bias=True, kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(Bilinear, self).__init__()
         self.unit = unit
         self.activation = keras.activations.get(activation)
         self.use_bias = use_bias
 
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+
     def build(self, input_shape):
         assert len(input_shape) == 2
         i1 = input_shape[0][-1]
         i2 = input_shape[1][-1]
-        self.kernel = self.add_weight(shape=(i1, i2, self.unit))
+        self.kernel = self.add_weight(shape=(i1, i2, self.unit), initializer=self.kernel_initializer)
         if self.use_bias:
-            self.bias = self.add_weight(shape=(self.unit,))
+            self.bias = self.add_weight(shape=(self.unit,), initializer=self.bias_initializer)
         self.built = True
 
     def call(self, inputs):
@@ -221,7 +246,9 @@ class Bilinear(keras.layers.Layer):
     
     
 class MeanAggregator(keras.layers.Layer):
-    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True):
+    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(MeanAggregator, self).__init__()
         self.unit = unit
         self.activation = keras.activations.get(activation)
@@ -229,16 +256,19 @@ class MeanAggregator(keras.layers.Layer):
         self.dropout_prob = dropout_prob
         self.use_bias = use_bias
 
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+
     def build(self, input_shape):
         self_unit = input_shape[0][-1]
         neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit))
-        self.self_weights = self.add_weight(shape=(self_unit, self.unit))
+        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit), initializer=self.kernel_initializer)
+        self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
         if self.use_bias:
             if self.concat:
-                self.biases = self.add_weight(shape=(2 * self.unit,))
+                self.biases = self.add_weight(shape=(2 * self.unit,), initializer=self.bias_initializer)
             else:
-                self.biases = self.add_weight(shape=(self.unit, ))
+                self.biases = self.add_weight(shape=(self.unit, ), initializer=self.bias_initializer)
         self.built = True
 
     def call(self, inputs):
@@ -269,7 +299,9 @@ class MeanAggregator(keras.layers.Layer):
 
 
 class LSTMAggregator(keras.layers.Layer):
-    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True):
+    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True,
+                 kernel_initializer='glorot_uniform',
+                 bias_initializer='zeros'):
         super(LSTMAggregator, self).__init__()
         self.unit = unit
         self.activation = keras.activations.get(activation)
@@ -277,16 +309,19 @@ class LSTMAggregator(keras.layers.Layer):
         self.dropout_prob = dropout_prob
         self.use_bias = use_bias
 
+        self.kernel_initializer = kernel_initializer
+        self.bias_initializer = bias_initializer
+
     def build(self, input_shape):
         self_unit = input_shape[0][-1]
         neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(self.unit, self.unit))
-        self.self_weights = self.add_weight(shape=(self_unit, self.unit))
+        self.neigh_weights = self.add_weight(shape=(self.unit, self.unit), initializer=self.kernel_initializer)
+        self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
         if self.use_bias:
             if self.concat:
-                self.biases = self.add_weight(shape=(2 * self.unit,))
+                self.biases = self.add_weight(shape=(2 * self.unit,), initializer=self.bias_initializer)
             else:
-                self.biases = self.add_weight(shape=(self.unit, ))
+                self.biases = self.add_weight(shape=(self.unit, ), initializer=self.bias_initializer)
         self.cell = keras.layers.LSTM(self.unit, dropout=self.dropout_prob)
         self.built = True
 
@@ -363,6 +398,23 @@ class GRUCell(keras.layers.AbstractRNNCell):
     @property
     def state_size(self):
         return self.units
+
+
+class GCRN1(keras.layers.Layer):
+    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
+                 kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
+                 bias_initializer='ones',):
+        super(GCRN1, self).__init__()
+        self.units = units
+        self.activation = keras.activations.get(activation)
+        self.recurrent_activation = keras.activations.get(recurrent_activation)
+        self.use_bias = use_bias
+        self.dropout_prob = dropout_prob
+        self.recurrent_dropout_prob = recurrent_dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.recurrent_initializer = recurrent_initializer
+        self.bias_initializer = bias_initializer
 
 
 class GCRN1(keras.layers.AbstractRNNCell):
