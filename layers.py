@@ -67,7 +67,7 @@ class ResidualLayer(keras.layers.Layer):
 
 class GraphAttention(keras.layers.Layer):
     def __init__(self, feature_size, attn_heads=8, dropout_prob=0.3, activation="elu",
-                 attn_heads_reduction='concat', kernel_initializer='glorot_uniform',
+                 attn_heads_reduction='mean', kernel_initializer='glorot_uniform',
                  bias_initializer='zeros'):
         super(GraphAttention, self).__init__()
         self.feature_size = feature_size
@@ -315,7 +315,7 @@ class LSTMAggregator(keras.layers.Layer):
     def build(self, input_shape):
         self_unit = input_shape[0][-1]
         neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(self.unit, self.unit), initializer=self.kernel_initializer)
+        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit), initializer=self.kernel_initializer)
         self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
         if self.use_bias:
             if self.concat:
@@ -400,12 +400,12 @@ class GRUCell(keras.layers.AbstractRNNCell):
         return self.units
 
 
-class GCRN1(keras.layers.Layer):
+class LSTMCell(keras.layers.AbstractRNNCell):
     def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
                  use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
                  kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
                  bias_initializer='ones',):
-        super(GCRN1, self).__init__()
+        super(LSTMCell, self).__init__()
         self.units = units
         self.activation = keras.activations.get(activation)
         self.recurrent_activation = keras.activations.get(recurrent_activation)
@@ -416,16 +416,252 @@ class GCRN1(keras.layers.Layer):
         self.recurrent_initializer = recurrent_initializer
         self.bias_initializer = bias_initializer
 
+    def build(self, input_shape):  # batch, seq_len, embed_size
+        self.batch = input_shape[0]
+        self.seq_len = input_shape[1]
+        self.embed_size = input_shape[2]
 
-class GCRN1(keras.layers.AbstractRNNCell):
-    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
-                 use_bias=True, dropout_prob=0.0, recurrent_dropout_prob=0.0):
+        self.Wf = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uf = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bf = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wi = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Ui = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bi = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wo = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uo = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bo = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wc = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uc = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bc = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+
+    def call(self, input_at_t, states_at_t):  # batch, embed_size;batch, units *seq_len;
+        state_at_t = states_at_t[0]  # batch, units * 2
+        h_at_t = tf.slice(state_at_t, [0, 0], [self.batch, self.units])
+        c_at_t = tf.slice(state_at_t, [0, self.units], [self.batch, self.units])
+        h_at_t = keras.layers.Dropout(self.dropout_prob)(h_at_t)
+        c_at_t = keras.layers.Dropout(self.dropout_prob)(c_at_t)
+        input_at_t = keras.layers.Dropout(self.dropout_prob)(input_at_t)
+
+        ft = self.recurrent_activation(tf.matmul(input_at_t, self.Wf) + tf.matmul(h_at_t, self.Uf) + self.bf)
+        ft = keras.layers.Dropout(self.recurrent_dropout_prob)(ft)
+
+        it = self.recurrent_activation(tf.matmul(input_at_t, self.Wi) + tf.matmul(h_at_t, self.Ui) + self.bi)
+        it = keras.layers.Dropout(self.recurrent_dropout_prob)(it)
+
+        ot = self.recurrent_activation(tf.matmul(input_at_t, self.Wo) + tf.matmul(h_at_t, self.Uo) + self.bo)
+        ot = keras.layers.Dropout(self.recurrent_dropout_prob)(ot)
+
+        ct_ = self.recurrent_activation(tf.matmul(input_at_t, self.Wc) + tf.matmul(h_at_t, self.Uc) + self.bc)
+        ct_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ct_)
+
+        ct = ft * c_at_t + it * ct_
+        ht = ot * self.activation(ct)
+        return ht, tf.concat([ht, ct], axis=-1)
+
+    @property
+    def state_size(self):
+        return self.units * 2
+
+
+class TLSTMCell(keras.layers.AbstractRNNCell):
+    def __init__(self, units, delta_dim = 1, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
+                 kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
+                 bias_initializer='ones',):
+        super(TLSTMCell, self).__init__()
         self.units = units
-        self.activation = activation
-        self.recurrent_activation = recurrent_activation
+        self.activation = keras.activations.get(activation)
+        self.recurrent_activation = keras.activations.get(recurrent_activation)
         self.use_bias = use_bias
         self.dropout_prob = dropout_prob
         self.recurrent_dropout_prob = recurrent_dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.recurrent_initializer = recurrent_initializer
+        self.bias_initializer = bias_initializer
+        self.delta_dim = delta_dim
 
-    def build(self, input_shape):
-        self.built = True
+    def build(self, input_shape):  # batch, seq_len, embed_size+delta_dim
+        self.batch = input_shape[0]
+        self.seq_len = input_shape[1]
+        self.embed_size = input_shape[2] - 1
+
+        self.Wd = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_activation)
+        self.bd = self.add_weight(shape=(self.units), initializer=self.bias_initializer)
+
+        self.Wf = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uf = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bf = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wi = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Ui = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bi = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wo = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uo = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bo = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wc = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uc = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bc = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+
+    def call(self, input_at_t, states_at_t):  # batch, embed_size+delta_dim;batch, units *seq_len;
+        state_at_t = states_at_t[0]  # batch, units * 2
+        h_at_t = tf.slice(state_at_t, [0, 0], [self.batch, self.units])
+        c_at_t = tf.slice(state_at_t, [0, self.units], [self.batch, self.units])
+        h_at_t = keras.layers.Dropout(self.dropout_prob)(h_at_t)
+        c_at_t = keras.layers.Dropout(self.dropout_prob)(c_at_t)
+        delta_t = tf.slice(input_at_t, [0, self.embed_size], [self.batch, self.delta_dim])
+        input_at_t = tf.slice([input_at_t], [0, 0], [self.batch, self.embed_size])
+        input_at_t = keras.layers.Dropout(self.dropout_prob)(input_at_t)
+        cs = self.activation(tf.matmul(c_at_t, self.Wd) + self.bd)  # batch, units
+        cs_ = cs * (1 / tf.log(2.7183 + delta_t))
+        ct = c_at_t - cs
+        c_at_t = ct + cs_
+
+        ft = self.recurrent_activation(tf.matmul(input_at_t, self.Wf) + tf.matmul(h_at_t, self.Uf) + self.bf)
+        ft = keras.layers.Dropout(self.recurrent_dropout_prob)(ft)
+
+        it = self.recurrent_activation(tf.matmul(input_at_t, self.Wi) + tf.matmul(h_at_t, self.Ui) + self.bi)
+        it = keras.layers.Dropout(self.recurrent_dropout_prob)(it)
+
+        ot = self.recurrent_activation(tf.matmul(input_at_t, self.Wo) + tf.matmul(h_at_t, self.Uo) + self.bo)
+        ot = keras.layers.Dropout(self.recurrent_dropout_prob)(ot)
+
+        ct_ = self.recurrent_activation(tf.matmul(input_at_t, self.Wc) + tf.matmul(h_at_t, self.Uc) + self.bc)
+        ct_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ct_)
+
+        ct = ft * c_at_t + it * ct_
+        ht = ot * self.activation(ct)
+        return ht, tf.concat([ht, ct], axis=-1)
+
+    @property
+    def state_size(self):
+        return self.units * 2
+
+
+class GCRN1Cell(keras.layers.AbstractRNNCell):
+    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
+                 kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
+                 bias_initializer='ones', support=2):
+        super(GCRN1Cell, self).__init__()
+        self.units = units
+        self.activation = keras.activations.get(activation)
+        self.recurrent_activation = keras.activations.get(recurrent_activation)
+        self.use_bias = use_bias
+        self.dropout_prob = dropout_prob
+        self.recurrent_dropout_prob = recurrent_dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.recurrent_initializer = recurrent_initializer
+        self.bias_initializer = bias_initializer
+        self.support = support
+
+    def build(self, input_shape):  # node_size, seq_len, embed_size+node_size
+        self.node_size = input_shape[0]
+        self.seq_len = input_shape[1]
+        self.embed_size = input_shape[2] - self.node_size
+        if self.mode == "gat":
+            self.model = GraphAttention(self.units, kernel_initializer=self.kernel_initializer,
+                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
+        else:
+            self.model = GraphConvolution(self.units, kernel_initializer=self.kernel_initializer,
+                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
+            self.filter = GCNFilter(support=self.support)
+        self.Wz = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uz = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bz = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wr = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Ur = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.br = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+        self.Wh = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Uh = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
+        self.bh = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
+
+    def call(self, input_at_t, states_at_t):  # node_size, embed_size + node_size;node_size, units *seq_len;
+        state_at_t = keras.layers.Dropout(self.dropout_prob)(states_at_t[0])  # node_size, units
+        x_at_t = tf.slice(input_at_t, [0, 0], [self.node_size, self.embed_size])  # node_size, embed_size
+        a_at_t = tf.slice(input_at_t, [0, self.embed_size], [self.node_size, self.node_size])  # node_size, node_size
+        if self.mode == "gcn":
+            a_at_t = self.filter(a_at_t)
+        input_at_t = self.model([x_at_t, a_at_t])
+        zt = self.recurrent_activation(tf.matmul(input_at_t, self.Wz) + tf.matmul(state_at_t, self.Uz) + self.bz)
+        zt = keras.layers.Dropout(self.recurrent_dropout_prob)(zt)
+
+        rt = self.recurrent_activation(tf.matmul(input_at_t, self.Wr) + tf.matmul(state_at_t, self.Ur) + self.br)
+        rt = keras.layers.Dropout(self.recurrent_dropout_prob)(rt)
+
+        ht_ = self.recurrent_activation(tf.matmul(input_at_t, self.Wh) + tf.matmul(state_at_t * rt, self.Uh) + self.bh)
+        ht_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ht_)
+
+        ht = (1 - zt) * state_at_t + zt * ht_
+        ht = keras.layers.Dropout(self.dropout_prob)(ht)
+        return ht, ht
+
+    @property
+    def state_size(self):
+        return self.units
+
+
+class GCRN2Cell(keras.layers.AbstractRNNCell):
+    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+                 use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
+                 kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
+                 bias_initializer='ones', mode="gat",support=2):
+        super(GCRN2Cell, self).__init__()
+        self.units = units
+        self.activation = keras.activations.get(activation)
+        self.recurrent_activation = keras.activations.get(recurrent_activation)
+        self.use_bias = use_bias
+        self.dropout_prob = dropout_prob
+        self.recurrent_dropout_prob = recurrent_dropout_prob
+        self.kernel_initializer = kernel_initializer
+        self.recurrent_initializer = recurrent_initializer
+        self.bias_initializer = bias_initializer
+        self.mode = mode  # "gat","gcn"
+        self.support = support
+
+    def build(self, input_shape):  # node_size, seq_len, embed_size + node_size
+        self.node_size = input_shape[0]
+        self.seq_len = input_shape[1]
+        self.embed_size = input_shape[2] - self.node_size
+        if self.mode == "gat":
+            model = GraphAttention
+        else:
+            model = GraphConvolution
+            self.filter = GCNFilter(support=self.support)
+        self.Wz = model(self.units, kernel_initializer=self.kernel_initializer,
+                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
+        self.Uz = model(self.units, kernel_initializer=self.recurrent_initializer,
+                        dropout_prob=self.recurrent_dropout_prob,
+                        bias_initializer=self.bias_initializer)
+        self.Wr = model(self.units, kernel_initializer=self.kernel_initializer,
+                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
+        self.Ur = model(self.units, kernel_initializer=self.recurrent_initializer,
+                        dropout_prob=self.recurrent_dropout_prob,
+                        bias_initializer=self.bias_initializer)
+        self.Wh = model(self.units, kernel_initializer=self.kernel_initializer,
+                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
+        self.Uh = model(self.units, kernel_initializer=self.recurrent_initializer,
+                        dropout_prob=self.recurrent_dropout_prob,
+                        bias_initializer=self.bias_initializer)
+
+    def call(self, input_at_t, states_at_t):  # node_size, embed_size + node_size;node_size, units *seq_len;
+        state_at_t = keras.layers.Dropout(self.dropout_prob)(states_at_t[0])  # node_size, units
+        x_at_t = tf.slice(input_at_t, [0, 0], [self.node_size, self.embed_size])  # node_size, embed_size
+        a_at_t = tf.slice(input_at_t, [0, self.embed_size], [self.node_size, self.node_size])  # node_size, node_size
+        if self.mode == "gcn":
+            a_at_t = self.filter(a_at_t)
+        x_at_t = keras.layers.Dropout(self.dropout_prob)(x_at_t)
+        zt = self.recurrent_activation(self.Wz([x_at_t, a_at_t]) + self.Uz([state_at_t, a_at_t]))
+        zt = keras.layers.Dropout(self.recurrent_dropout_prob)(zt)  # node_size, units
+
+        rt = self.recurrent_activation(self.Wr([x_at_t, a_at_t]) + self.Ur([state_at_t, a_at_t]))
+        rt = keras.layers.Dropout(self.recurrent_dropout_prob)(rt)  # node_size, units
+
+        ht_ = self.recurrent_activation(self.Wh([x_at_t, a_at_t]) + self.Uh([state_at_t * rt, a_at_t]))
+        ht_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ht_)  # node_size, units
+
+        ht = (1 - zt) * state_at_t + zt * ht_
+        ht = keras.layers.Dropout(self.dropout_prob)(ht)
+        return ht, ht
+
+    @property
+    def state_size(self):
+        return self.units
