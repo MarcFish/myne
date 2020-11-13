@@ -118,12 +118,16 @@ class TemporalGraph(StaticGraph):
 
     def read_from_file(self, filename, file_mode="csv", mode="edge_list"):
         file = pd.read_csv(filename)
-        node_set = set(file.values.flatten())
+        node_set = set(file[['x', 'y']].values.flatten())
         self._node_map.fit(list(node_set))
         file['x'] = self._node_map.transform(file['x'])  # TODO
         file['y'] = self._node_map.transform(file['y'])
-        self._adj = coo_matrix((file['time'].values, (file['x'].values,
-                                                            file['y'].values)), shape=(len(node_set), len(node_set)))
+        x_ = file['x'].values
+        y_ = file['y'].values
+        x = np.concatenate([x_, y_])
+        y = np.concatenate([y_, x_])
+        time = np.concatenate([file['t'].values, file['t'].values])
+        self._adj = coo_matrix((time, (x, y)), shape=(len(node_set), len(node_set)))
         self._adj_csr = self._adj.tocsr()
 
     def get_node_neighbors(self, node, with_time=False):
