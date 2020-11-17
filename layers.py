@@ -27,13 +27,18 @@ class DenseLayer(keras.layers.Layer):
 
 
 class ResidualLayer(keras.layers.Layer):
-    def __init__(self, unit1s, unit2s, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
+    def __init__(self, unit1s, unit2s=None, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
                  bias_initializer='zeros'):
         super(ResidualLayer, self).__init__()
         self.layer1 = keras.Sequential()
-        self.layer2 = keras.Sequential()
         self.unit1s = unit1s
-        self.unit2s = unit2s
+        if unit2s is not None:
+            if len(unit2s) == 0:
+                raise Exception("unit2s should be None or a non-empty list")
+            self.layer2 = keras.Sequential()
+            self.unit2s = unit2s
+        if len(self.unit1s) == 0:
+            raise Exception("unit1s should not be empty")
         self.dropout_prob = dropout_prob
         self.kernel_initializer = kernel_initializer
         self.bias_initializer = bias_initializer
@@ -41,27 +46,40 @@ class ResidualLayer(keras.layers.Layer):
 
     def build(self, input_shape):
         for unit in self.unit1s:
-            self.layers.add(keras.layers.Dropout(self.dropout_prob))
-            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
+            self.layer1.add(keras.layers.Dropout(self.dropout_prob))
+            self.layer1.add(keras.layers.Dense(units=unit, activation=self.activation,
                                                kernel_initializer=self.kernel_initializer,
                                                bias_initializer=self.bias_initializer))
-            self.layers.add(keras.layers.LayerNormalization())
-        for unit in self.unit2s:
-            self.layers.add(keras.layers.Dropout(self.dropout_prob))
-            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
-                                               kernel_initializer=self.kernel_initializer,
-                                               bias_initializer=self.bias_initializer))
-            self.layers.add(keras.layers.LayerNormalization())
-
-    def build(self, input_shape):
-        if input_shape[-1] != self.unit2s[-1]:
-            raise Exception("Dim not equal")
+            self.layer1.add(keras.layers.LayerNormalization())
+        if self.unit2s is not None:
+            for unit in self.unit2s:
+                self.layer2.add(keras.layers.Dropout(self.dropout_prob))
+                self.layer2.add(keras.layers.Dense(units=unit, activation=self.activation,
+                                                   kernel_initializer=self.kernel_initializer,
+                                                   bias_initializer=self.bias_initializer))
+                self.layer2.add(keras.layers.LayerNormalization())
+            if self.unit2s[-1] != self.unit1s[-1]:
+                self.layer = keras.layers.Dense(units=self.unit1s[-1])
+        else:
+            if input_shape[-1] != self.unit1s[-1]:
+                self.layer = keras.layers.Dense(units=input_shape[-1])
+        self.norm = keras.layers.LayerNormalization()
         self.built = True
 
     def call(self, inputs):
         x = self.layer1(inputs)
-        x = self.layer2(x)
-        outputs = self.activation(x + inputs)
+        if self.unit2s is not None:
+            y = self.layer2(inputs)
+            if self.layer is not None:
+                y = self.layer(y)
+            outputs = self.activation(x + y)
+        else:
+            if self.layer is not None:
+                outputs = self.activation(x + self.layer(inputs))
+            else:
+                outputs = self.activation(x + inputs)
+
+        outputs = self.norm(outputs)
         return outputs
 
 
@@ -418,8 +436,7 @@ class LSTMCell(keras.layers.AbstractRNNCell):
 
     def build(self, input_shape):  # batch, seq_len, embed_size
         self.batch = input_shape[0]
-        self.seq_len = input_shape[1]
-        self.embed_size = input_shape[2]
+        self.embed_size = input_shape[1]
 
         self.Wf = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
         self.Uf = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
@@ -482,8 +499,7 @@ class TLSTMCell(keras.layers.AbstractRNNCell):
 
     def build(self, input_shape):  # batch, seq_len, embed_size+delta_dim
         self.batch = input_shape[0]
-        self.seq_len = input_shape[1]
-        self.embed_size = input_shape[2] - 1
+        self.embed_size = input_shape[1] - 1
 
         self.Wd = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_activation)
         self.bd = self.add_weight(shape=(self.units), initializer=self.bias_initializer)
@@ -540,7 +556,7 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
     def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
                  use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
                  kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
-                 bias_initializer='ones', support=2):
+                 bias_initializer='ones', support=2, mode="gat"):
         super(GCRN1Cell, self).__init__()
         self.units = units
         self.activation = keras.activations.get(activation)
@@ -552,11 +568,11 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
         self.recurrent_initializer = recurrent_initializer
         self.bias_initializer = bias_initializer
         self.support = support
+        self.mode = mode
 
     def build(self, input_shape):  # node_size, seq_len, embed_size+node_size
         self.node_size = input_shape[0]
-        self.seq_len = input_shape[1]
-        self.embed_size = input_shape[2] - self.node_size
+        self.embed_size = input_shape[1] - self.node_size
         if self.mode == "gat":
             self.model = GraphAttention(self.units, kernel_initializer=self.kernel_initializer,
                         dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
@@ -564,13 +580,13 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
             self.model = GraphConvolution(self.units, kernel_initializer=self.kernel_initializer,
                         dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
             self.filter = GCNFilter(support=self.support)
-        self.Wz = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Wz = self.add_weight(shape=(self.units, self.units), initializer=self.kernel_initializer)
         self.Uz = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
         self.bz = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
-        self.Wr = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Wr = self.add_weight(shape=(self.units, self.units), initializer=self.kernel_initializer)
         self.Ur = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
         self.br = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
-        self.Wh = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
+        self.Wh = self.add_weight(shape=(self.units, self.units), initializer=self.kernel_initializer)
         self.Uh = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
         self.bh = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
 
@@ -619,8 +635,7 @@ class GCRN2Cell(keras.layers.AbstractRNNCell):
 
     def build(self, input_shape):  # node_size, seq_len, embed_size + node_size
         self.node_size = input_shape[0]
-        self.seq_len = input_shape[1]
-        self.embed_size = input_shape[2] - self.node_size
+        self.embed_size = input_shape[1] - self.node_size
         if self.mode == "gat":
             model = GraphAttention
         else:
