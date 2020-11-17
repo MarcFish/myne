@@ -3,7 +3,7 @@ import numpy as np
 import scipy.sparse as sp
 from copy import deepcopy
 from .utils import *
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 from scipy.sparse import coo_matrix
 
 
@@ -31,6 +31,44 @@ class DBLP:
 
         self.train_g.adj = adj.tocoo()
         self.test_g.adj = (self.g.adj_csr - self.train_g.adj_csr).tocoo()
+
+
+class Book:
+    def __init__(self, edge_file="E:/project/NE/data/amazon_book/edge.csv",
+                 feature_file="E:/project/NE/data/amazon_book/feature.csv", prob=0.7):
+        self.g = TemporalGraph()
+        self.g.read_from_file(edge_file)
+
+        # read category
+        labels = list()
+        for row in read_csv(feature_file):
+            labels.append(row[1:])
+        mlb = MultiLabelBinarizer()
+        mlb.fit(labels)
+        self.label_size = len(mlb.classes_)
+        self.label_matrix = np.ndarray(shape=(self.g.node_size, self.label_size), dtype=np.float32)
+        for row in read_csv(feature_file):
+            node = int(row[0])
+            labels = mlb.transform([row[1:]])
+            self.label_matrix[node] = labels
+
+        self.disc_gs = list()
+
+    def discrete(self, slot=10):
+        self.disc_gs = list()
+        nonzero = self.g.adj_csr[self.g.adj_csr.nonzero()]
+        min_ = np.min(nonzero)
+        max_ = np.max(nonzero)
+        slice_ = (max_ - min_) // slot
+        adj = self.g.adj_csr.toarray()
+        for i in range(1, slot + 1):
+            adj_ = deepcopy(adj)
+            adj_[np.where(adj_ > min_ + slice_ * i)] = 0
+            g = TemporalGraph()
+            g.adj = sp.coo_matrix(adj_)
+            self.disc_gs.append(g)
+
+        return self.disc_gs
 
 
 class Math:
