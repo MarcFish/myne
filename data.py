@@ -34,8 +34,8 @@ class DBLP:
 
 
 class Book:
-    def __init__(self, edge_file="E:/project/NE/data/amazon_book_30/edge.csv",
-                 feature_file="E:/project/NE/data/amazon_book_30/feature.csv", prob=0.7):
+    def __init__(self, edge_file="E:/project/NE/data/amazon_book_35/edge.csv",
+                 feature_file="E:/project/NE/data/amazon_book_35/feature.csv", prob=0.7):
         self.g = TemporalGraph()
         self.g.read_from_file(edge_file)
 

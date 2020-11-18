@@ -417,6 +417,9 @@ class GRUCell(keras.layers.AbstractRNNCell):
     def state_size(self):
         return self.units
 
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.units
+
 
 class LSTMCell(keras.layers.AbstractRNNCell):
     def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
@@ -479,6 +482,9 @@ class LSTMCell(keras.layers.AbstractRNNCell):
     def state_size(self):
         return self.units * 2
 
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.units
+
 
 class TLSTMCell(keras.layers.AbstractRNNCell):
     def __init__(self, units, delta_dim = 1, activation="tanh", recurrent_activation="sigmoid",
@@ -502,7 +508,7 @@ class TLSTMCell(keras.layers.AbstractRNNCell):
         self.embed_size = input_shape[1] - 1
 
         self.Wd = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_activation)
-        self.bd = self.add_weight(shape=(self.units), initializer=self.bias_initializer)
+        self.bd = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
 
         self.Wf = self.add_weight(shape=(input_shape[-1], self.units), initializer=self.kernel_initializer)
         self.Uf = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
@@ -550,6 +556,9 @@ class TLSTMCell(keras.layers.AbstractRNNCell):
     @property
     def state_size(self):
         return self.units * 2
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.units
 
 
 class GCRN1Cell(keras.layers.AbstractRNNCell):
@@ -613,6 +622,9 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
     @property
     def state_size(self):
         return self.units
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.units
 
 
 class GCRN2Cell(keras.layers.AbstractRNNCell):
@@ -680,3 +692,6 @@ class GCRN2Cell(keras.layers.AbstractRNNCell):
     @property
     def state_size(self):
         return self.units
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], self.units

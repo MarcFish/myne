@@ -18,7 +18,11 @@ parser.add_argument("--slots",type=int, default=10)
 
 arg = parser.parse_args()
 
-
-model = GCRN(100, arg.embed_size, mode=2, stack=2)
-As = np.random.randint(2, size=(100, 10, 100)).astype(np.float32)
-output = model(As)
+book = Book()
+book.discrete()
+As = np.stack([g.adj.toarray() for g in book.disc_gs], axis=1).astype(np.float32)
+model = GCRN(book.g.node_size, arg.embed_size, book.label_size, mode=2, stack=1)
+model.compile(loss='categorical_crossentropy',
+            optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.l2),
+            metrics=['categorical_accuracy'])
+model.fit(As, book.label_matrix, batch_size=book.g.node_size, epochs=arg.epoch, shuffle=False)
