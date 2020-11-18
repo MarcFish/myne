@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow.keras as keras
+import nn
 
 
 class DenseLayer(keras.layers.Layer):
