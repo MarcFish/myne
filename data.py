@@ -34,8 +34,8 @@ class DBLP:
 
 
 class Book:
-    def __init__(self, edge_file="E:/project/NE/data/amazon_book_35/edge.csv",
-                 feature_file="E:/project/NE/data/amazon_book_35/feature.csv", prob=0.7):
+    def __init__(self, edge_file="E:/project/NE/data/amazon_book/edge.csv",
+                 feature_file="E:/project/NE/data/amazon_book/feature.csv", prob=0.7):
         self.g = TemporalGraph()
         self.g.read_from_file(edge_file)
 
@@ -47,9 +47,11 @@ class Book:
         mlb.fit(labels)
         self.label_size = len(mlb.classes_)
         self.label_matrix = np.ndarray(shape=(self.g.node_size, self.label_size), dtype=np.float32)
+        self.label_array = np.ndarray(shape=(self.g.node_size,),dtype=np.int32)
         for row in read_csv(feature_file):
             node = int(row[0])
             labels = mlb.transform([row[1:]])
+            self.label_array[node] = int(row[-1])
             self.label_matrix[node] = labels
 
         self.disc_gs = list()

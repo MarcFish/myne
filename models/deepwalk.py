@@ -9,7 +9,7 @@ from ..utils import generate_word
 class DeepWalk(Model):
     def __init__(self, graph, embed_size=128, epochs=10, num_sampled=5,
                  walk_length=40, num_walks=10, workers=2, lr=1e-3, l2=1e-2,
-                 num_skips=2, skip_window=2, batch_size=256):
+                 num_skips=2, skip_window=3, batch_size=256):
         self.g = graph
         self.walker = BaseWalker(graph, num_walks, walk_length, workers)
         self.sentences = self.walker.simulate_walks()

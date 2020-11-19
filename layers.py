@@ -26,6 +26,9 @@ class DenseLayer(keras.layers.Layer):
         o = self.layers(inputs)
         return o
 
+    def compute_output_shape(self, input_shape):
+        return *input_shape[:-1], self.units
+
 
 class ResidualLayer(keras.layers.Layer):
     def __init__(self, unit1s, unit2s=None, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
@@ -334,7 +337,7 @@ class LSTMAggregator(keras.layers.Layer):
     def build(self, input_shape):
         self_unit = input_shape[0][-1]
         neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit), initializer=self.kernel_initializer)
+        self.neigh_weights = self.add_weight(shape=(self.unit, self.unit), initializer=self.kernel_initializer)
         self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
         if self.use_bias:
             if self.concat:
@@ -627,6 +630,10 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
     def compute_output_shape(self, input_shape):
         return input_shape[0], self.units
 
+    @property
+    def output_size(self):
+        return self.units
+
 
 class GCRN2Cell(keras.layers.AbstractRNNCell):
     def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
@@ -696,3 +703,7 @@ class GCRN2Cell(keras.layers.AbstractRNNCell):
 
     def compute_output_shape(self, input_shape):
         return input_shape[0], self.units
+
+    @property
+    def output_size(self):
+        return self.units

@@ -25,7 +25,7 @@ class GCRN(keras.Model):
             cell = GCRN2Cell
         if self.stack == 1:
             self.rnn = keras.layers.RNN(cell(self.embed_size))
-        else:
+        else:  # TODO stack>=1 has bug
             cell_list = [cell(self.embed_size) for _ in range(self.stack)]
             stack_cell = keras.layers.StackedRNNCells(cell_list)
             self.rnn = keras.layers.RNN(stack_cell)

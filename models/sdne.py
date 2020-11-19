@@ -24,7 +24,7 @@ class SDNE(Model):
         self.l2 = l2
 
         if layer_size_list is None:
-            self.layer_size_list = [32, 64, 128, self.embed_size]
+            self.layer_size_list = [128, 128, 128, self.embed_size]
         else:
             self.layer_size_list = layer_size_list
 
@@ -89,8 +89,8 @@ class _SDNE(keras.Model):
     def __init__(self, node_size, layer_size_list, dropout_prob):
         super(_SDNE, self).__init__()
         layer_size_list.insert(0, node_size)
-        self.encoder = DenseLayer(layer_size_list, dropout_prob)
-        self.decoder = DenseLayer(reversed(layer_size_list), dropout_prob)
+        self.encoder = DenseLayer(layer_size_list, dropout_prob=dropout_prob)
+        self.decoder = DenseLayer(reversed(layer_size_list), dropout_prob=dropout_prob)
 
     def call(self, inp):
         enc_output = self.encoder(inp)
