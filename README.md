@@ -1,5 +1,5 @@
 # Network Embedding Just For Study
-This repository provides a reproduction for NRL models and is just for study network structure.
+This repository provides a reproduction for NRL models and is just for study.
 
 ## Visual by TTNE
 ### LINE
