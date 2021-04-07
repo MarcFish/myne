@@ -1,90 +1,29 @@
 import tensorflow as tf
 import tensorflow.keras as keras
-import nn
 
 
-class DenseLayer(keras.layers.Layer):
-    def __init__(self, units, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
-                 bias_initializer='zeros'):
-        super(DenseLayer, self).__init__()
-        self.layers = keras.Sequential()
-        self.dropout_prob = dropout_prob
-        self.kernel_initializer = kernel_initializer
-        self.bias_initializer = bias_initializer
-        self.units = units
-        self.activation = activation
+class SampleSoftmaxLoss(keras.layers.Layer):
+    def __init__(self, node_size, num_sampled=5, **kwargs):
+        super(SampleSoftmaxLoss, self).__init__(**kwargs)
+        self.node_size = node_size
+        self.num_sampled = num_sampled
 
-    def build(self, input_shape):
-        for unit in self.units:
-            self.layers.add(keras.layers.Dropout(self.dropout_prob))
-            self.layers.add(keras.layers.Dense(units=unit, activation=self.activation,
-                                               kernel_initializer=self.kernel_initializer,
-                                               bias_initializer=self.bias_initializer))
-            self.layers.add(keras.layers.LayerNormalization())
+    def build(self, input_shape):  # y_true, embed
+        units = input_shape[-1][-1]
+        self.w = self.add_weight(shape=(self.node_size, units))
+        self.b = self.add_weight(shape=(self.node_size, ))
+        super(SampleSoftmaxLoss, self).build(input_shape)
 
-    def call(self, inputs):
-        o = self.layers(inputs)
-        return o
-
-    def compute_output_shape(self, input_shape):
-        return *input_shape[:-1], self.units
-
-
-class ResidualLayer(keras.layers.Layer):
-    def __init__(self, unit1s, unit2s=None, activation="elu", dropout_prob=0.1, kernel_initializer='glorot_uniform',
-                 bias_initializer='zeros'):
-        super(ResidualLayer, self).__init__()
-        self.layer1 = keras.Sequential()
-        self.unit1s = unit1s
-        if unit2s is not None:
-            if len(unit2s) == 0:
-                raise Exception("unit2s should be None or a non-empty list")
-            self.layer2 = keras.Sequential()
-            self.unit2s = unit2s
-        if len(self.unit1s) == 0:
-            raise Exception("unit1s should not be empty")
-        self.dropout_prob = dropout_prob
-        self.kernel_initializer = kernel_initializer
-        self.bias_initializer = bias_initializer
-        self.activation = keras.activations.get(activation)
-
-    def build(self, input_shape):
-        for unit in self.unit1s:
-            self.layer1.add(keras.layers.Dropout(self.dropout_prob))
-            self.layer1.add(keras.layers.Dense(units=unit, activation=self.activation,
-                                               kernel_initializer=self.kernel_initializer,
-                                               bias_initializer=self.bias_initializer))
-            self.layer1.add(keras.layers.LayerNormalization())
-        if self.unit2s is not None:
-            for unit in self.unit2s:
-                self.layer2.add(keras.layers.Dropout(self.dropout_prob))
-                self.layer2.add(keras.layers.Dense(units=unit, activation=self.activation,
-                                                   kernel_initializer=self.kernel_initializer,
-                                                   bias_initializer=self.bias_initializer))
-                self.layer2.add(keras.layers.LayerNormalization())
-            if self.unit2s[-1] != self.unit1s[-1]:
-                self.layer = keras.layers.Dense(units=self.unit1s[-1])
-        else:
-            if input_shape[-1] != self.unit1s[-1]:
-                self.layer = keras.layers.Dense(units=input_shape[-1])
-        self.norm = keras.layers.LayerNormalization()
-        self.built = True
-
-    def call(self, inputs):
-        x = self.layer1(inputs)
-        if self.unit2s is not None:
-            y = self.layer2(inputs)
-            if self.layer is not None:
-                y = self.layer(y)
-            outputs = self.activation(x + y)
-        else:
-            if self.layer is not None:
-                outputs = self.activation(x + self.layer(inputs))
-            else:
-                outputs = self.activation(x + inputs)
-
-        outputs = self.norm(outputs)
-        return outputs
+    def call(self, inputs, **kwargs):
+        labels, embed = inputs
+        loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self.w,
+                                                 biases=self.b,
+                                                 inputs=embed,
+                                                 labels=labels,
+                                                 num_sampled=self.num_sampled,
+                                                 num_classes=self.node_size))
+        self.add_loss(loss)
+        return embed
 
 
 class GraphAttention(keras.layers.Layer):

@@ -3,7 +3,7 @@ import itertools
 
 from joblib import Parallel, delayed
 
-from .utils import allocation_num
+from utils import allocation_num
 
 
 class BaseWalker:
@@ -15,7 +15,7 @@ class BaseWalker:
 
     def simulate_walks(self, verbose=0):
 
-        nodes = self.g.node_list
+        nodes = self.g.node_array
 
         results = Parallel(n_jobs=self.workers, verbose=verbose, )(
             delayed(self._simulate_walks)(nodes, num) for num in

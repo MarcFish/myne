@@ -1,42 +1,16 @@
 import numpy as np
-import abc
 from scipy.sparse import coo_matrix
 import scipy.sparse as sp
-from sklearn.preprocessing import LabelEncoder
-import pandas as pd
+from utils import read_csv, Vocab, read_txt
+import collections
+from pathlib import Path
 
 
-class Graph(abc.ABC):
-    @abc.abstractmethod
-    def read_from_file(self, filename, mode):
-        return NotImplementedError
-
-    @property
-    @abc.abstractmethod
-    def adj(self):
-        return NotImplementedError
-
-    @property
-    @abc.abstractmethod
-    def node_map(self):
-        return NotImplementedError
-
-    @property
-    @abc.abstractmethod
-    def node_size(self):
-        return NotImplementedError
-
-    @property
-    @abc.abstractmethod
-    def edge_size(self):
-        return NotImplementedError
-
-
-class StaticGraph(Graph):
+class StaticGraph:
     def __init__(self):
         self._adj = None
         self._adj_csr = None
-        self._node_map = LabelEncoder()
+        self._vocab = None
 
     @property
     def adj(self):
@@ -60,29 +34,38 @@ class StaticGraph(Graph):
         return self._adj.nnz // 2
 
     @property
-    def node_map(self):
-        return self._node_map
+    def vocab(self):
+        return self._vocab
 
     @property
-    def node_list(self):
+    def node_array(self):
         return np.arange(0, self._adj.shape[0])
 
     @property
-    def edge_list(self):
+    def edge_array(self):
         return np.stack((self._adj.row, self._adj.col), axis=-1)
 
-    def read_from_file(self, filename, file_mode="csv", mode="edge_list"):
-        file = pd.read_csv(filename)
-        node_set = set(file.values.flatten())
-        self._node_map.fit(list(node_set))
-        file['x'] = self._node_map.transform(file['x'])  # TODO
-        file['y'] = self._node_map.transform(file['y'])
-        x_ = file['x'].values
-        y_ = file['y'].values
-        x = np.concatenate([x_, y_])
-        y = np.concatenate([y_, x_])
-        self._adj = coo_matrix((np.ones(len(file['x']) * 2), (x, y)), shape=(len(node_set), len(node_set)))
-        self._adj_csr = self._adj.tocsr() + sp.eye(len(node_set))
+    def read_edge(self, filename: Path):
+        if "txt" in filename.suffix:
+            read_func = read_txt
+        elif "csv" in filename.suffix:
+            read_func = read_csv
+        else:
+            raise Exception("unknow file type")
+        node_list = list()
+        for row in read_func(filename):
+            node_list.append(row[0])
+            node_list.append(row[1])
+        self._vocab = Vocab(collections.Counter(node_list))
+        edge_array = []
+        for row in read_func(filename):
+            n1 = self._vocab.stoi[row[0]]
+            n2 = self._vocab.stoi[row[1]]
+            edge_array.append([n1, n2])
+            edge_array.append([n2, n1])
+        edge_array = np.asarray(edge_array, dtype=np.int32)
+        self._adj = coo_matrix((np.ones(len(edge_array)), (edge_array[:, 0], edge_array[:, 1])), shape=(len(self._vocab), len(self._vocab)))
+        self._adj_csr = self._adj.tocsr() + sp.eye(len(self._vocab))
         self._adj = self._adj_csr.tocoo()
 
     def get_node_neighbors(self, node):
@@ -92,46 +75,4 @@ class StaticGraph(Graph):
         return self._adj_csr[node].nnz
 
     def get_nodes_degree_list(self):
-        return np.asarray([self.get_node_degree(n) for n in self.node_list])
-
-
-class TemporalGraph(StaticGraph):
-    def __init__(self):
-        super(TemporalGraph, self).__init__()
-
-    @property
-    def adj(self):
-        return self._adj
-
-    @property
-    def adj_csr(self):
-        return self._adj_csr
-
-    @adj.setter
-    def adj(self, x):
-        self._adj = x
-        self._adj_csr = self._adj.tocsr()
-
-    @property
-    def edge_list(self):
-        return np.stack((self._adj.row, self._adj.col, self._adj.data), axis=-1)
-
-    def read_from_file(self, filename, file_mode="csv", mode="edge_list"):
-        file = pd.read_csv(filename)
-        node_set = set(file[['x', 'y']].values.flatten())
-        self._node_map.fit(list(node_set))
-        file['x'] = self._node_map.transform(file['x'])  # TODO
-        file['y'] = self._node_map.transform(file['y'])
-        x_ = file['x'].values
-        y_ = file['y'].values
-        x = np.concatenate([x_, y_])
-        y = np.concatenate([y_, x_])
-        time = np.concatenate([file['t'].values, file['t'].values])
-        self._adj = coo_matrix((time, (x, y)), shape=(len(node_set), len(node_set)))
-        self._adj_csr = self._adj.tocsr()
-
-    def get_node_neighbors(self, node, with_time=False):
-        if with_time:
-            return np.stack((self._adj_csr[node].indices, self._adj_csr[node].data), axis=-1)
-        else:
-            return self._adj_csr[node].indices
+        return np.asarray([self.get_node_degree(n) for n in self.node_array])

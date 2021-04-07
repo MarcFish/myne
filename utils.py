@@ -1,4 +1,3 @@
-from collections import OrderedDict
 import collections
 import csv
 import random
@@ -9,73 +8,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 
-class MapDict:
-    def __init__(self, node_list):
-
-        self._node_list = node_list
-
-        self.d = OrderedDict()
-        self.d_inv = OrderedDict()
-        for n in node_list:
-            self.d.setdefault(n, len(self.d))
-            self.d_inv.setdefault(self.d[n], n)
-
-    def get(self, key):
-        if key in self.d:
-            return self.d[key]
-        elif key in self.d_inv:
-            return self.d_inv[key]
-        else:
-            raise KeyError
-
-    def __getitem__(self, key):  # TODO bug
-        if key in self.d:
-            return self.d[key]
-        elif key in self.d_inv:
-            return self.d_inv[key]
-        else:
-            raise KeyError
-
-    def __len__(self):
-        if len(self.d) != len(self.d_inv):
-            raise Exception("length not equal")
-        return len(self.d)
-
-    def iter_node(self):
-        """
-        return a iter to traverse all node
-        :return:
-        """
-        return self.d.keys()
-
-    def iter_node_map(self):
-        """
-        return a iter to traverse all node map
-        :return:
-        """
-        return self.d_inv.keys()
-
-    def get_map_list(self, node_list):
-        """
-        return a list contains node map from node_list
-        :param node_list:
-        :return:
-        """
-        return [self.d[node] for node in node_list]
-
-    def get_inv_map_list(self, map_list):
-        """
-        return a list contains node from map_list
-        :param map_list:
-        :return:
-        """
-        return [self.d_inv[node_map] for node_map in map_list]
-
-    def pop(self, key):
-        self.d_inv.pop(self.d.get(key))
-        self.d.pop(key)
-
-
 def allocation_num(num, workers):  # TODO: workers=-1
     if num % workers == 0:
         return [num//workers]*workers
@@ -83,7 +15,7 @@ def allocation_num(num, workers):  # TODO: workers=-1
         return [num//workers]*workers + [num % workers]
 
 
-def read_csv(filename, with_header=True):
+def read_csv(filename, with_header=False):
     with open(filename, 'r', encoding='utf-8') as f:
         f_csv = csv.reader(f)
         if with_header:
@@ -106,7 +38,7 @@ def write_csv(filename, content_iter,append=False):
 def read_txt(filename):
     with open(filename, 'r', encoding='utf-8') as f:
         for row in f:
-            yield row.strip()
+            yield row.strip().split()
 
 
 def scatter2d(x, y):
@@ -168,3 +100,27 @@ def convert_coo_to_sparse(A):
     values = A.data
     dense_shape = A.shape
     return tf.SparseTensor(indices, values, dense_shape)
+
+
+class Vocab:
+    def __init__(self, counter: collections.Counter):
+        self.stoi = collections.defaultdict()
+        self.itos = list(counter)
+        self.stoi.update({tok: i for i, tok in enumerate(self.itos)})
+
+    def raw_to_seq(self, raw):
+        def gen(raw):
+            for r in raw:
+                for w in r:
+                    yield self.stoi[w]
+        return list(gen(raw))
+
+    def seq_to_raw(self, seq):
+        def gen(seq):
+            for s in seq:
+                for w in s:
+                    yield self.itos[w]
+        return list(gen(seq))
+
+    def __len__(self):
+        return len(self.itos)

@@ -1,7 +1,6 @@
-from .deepwalk import DeepWalk
 from .htne import HTNE
 from .sdne import SDNE
-from .word2vec import Word2Vec
+from word2vec import Word2Vec
 from .line import LINE
 from .graphsage import SupervisedGraphSage, UnSupervisedGraphSage
 from .gcrn import GCRN
