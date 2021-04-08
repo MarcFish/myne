@@ -15,7 +15,7 @@ def allocation_num(num, workers):  # TODO: workers=-1
         return [num//workers]*workers + [num % workers]
 
 
-def read_csv(filename, with_header=False):
+def read_csv(filename, with_header=True):
     with open(filename, 'r', encoding='utf-8') as f:
         f_csv = csv.reader(f)
         if with_header:

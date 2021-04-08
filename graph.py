@@ -4,6 +4,7 @@ import scipy.sparse as sp
 from utils import read_csv, Vocab, read_txt
 import collections
 from pathlib import Path
+import typing
 
 
 class StaticGraph:
@@ -11,6 +12,9 @@ class StaticGraph:
         self._adj = None
         self._adj_csr = None
         self._vocab = None
+        self._label_vocab = None
+        self._node_label = None
+        self._node_feature = None
 
     @property
     def adj(self):
@@ -45,13 +49,33 @@ class StaticGraph:
     def edge_array(self):
         return np.stack((self._adj.row, self._adj.col), axis=-1)
 
+    def read_node_feature(self, feature_dict: dict):
+        feature_list = [None] * self.node_size
+        for n, feature in feature_dict.items():
+            n = self.vocab.stoi[n]
+            feature_list[n] = feature
+        feature_array = np.asarray(feature_list, dtype=np.float32)
+        self._node_feature = feature_array
+
+    def read_node_label(self, label_dict: dict):
+        label_list = [None] * self.node_size
+        labels = []
+        for label in label_dict.values():
+            labels.append(label)
+        self._label_vocab = Vocab(collections.Counter(labels))
+        for n, label in label_dict.items():
+            n = self.vocab.stoi[n]
+            label = self._label_vocab.stoi[label]
+            label_list[n] = label
+        self._node_label = np.asarray(label_list, dtype=np.int32)
+
     def read_edge(self, filename: Path):
         if "txt" in filename.suffix:
             read_func = read_txt
         elif "csv" in filename.suffix:
             read_func = read_csv
         else:
-            raise Exception("unknow file type")
+            read_func = read_txt
         node_list = list()
         for row in read_func(filename):
             node_list.append(row[0])
@@ -76,3 +100,15 @@ class StaticGraph:
 
     def get_nodes_degree_list(self):
         return np.asarray([self.get_node_degree(n) for n in self.node_array])
+
+    def get_nodes_label(self, nodes: typing.Union[list, np.ndarray, None]) -> np.ndarray:
+        if nodes is None:
+            return self._node_label
+        else:
+            return self._node_label[nodes]
+
+    def get_nodes_features(self, nodes: typing.Union[list, np.ndarray, None]) -> np.ndarray:
+        if nodes is None:
+            return self._node_feature
+        else:
+            return self._node_feature[nodes]

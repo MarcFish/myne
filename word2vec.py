@@ -11,9 +11,7 @@ class Word2Vec(keras.Model):
         self.num_sampled = num_sampled
 
     def build(self, input_shape):
-        self.embedding = keras.layers.Embedding(input_dim=self.word_size, output_dim=self.embed_size,
-                                                embeddings_initializer="he_uniform",
-                                                embeddings_regularizer="l2")
+        self.embedding = self.add_weight(shape=(self.word_size, self.embed_size), initializer="he_uniform", regularizer="l2")
         self.loss_layer = SampleSoftmaxLoss(self.word_size, self.num_sampled)
 
         self.built = True
@@ -22,10 +20,10 @@ class Word2Vec(keras.Model):
         if training:
             inp, tar = inputs
             inp = tf.reshape(inp, (-1,))
-            embed = self.embedding(inp)
+            embed = tf.nn.embedding_lookup(self.embedding, inp)
             self.loss_layer((tar, embed))
             return embed
         else:
             inp = tf.reshape(inputs, (-1))
-            embed = self.embedding(inp)
+            embed = tf.nn.embedding_lookup(self.embedding, inp)
             return embed
