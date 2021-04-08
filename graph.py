@@ -101,13 +101,13 @@ class StaticGraph:
     def get_nodes_degree_list(self):
         return np.asarray([self.get_node_degree(n) for n in self.node_array])
 
-    def get_nodes_label(self, nodes: typing.Union[list, np.ndarray, None]) -> np.ndarray:
+    def get_nodes_label(self, nodes: typing.Union[list, np.ndarray, None] = None) -> np.ndarray:
         if nodes is None:
             return self._node_label
         else:
             return self._node_label[nodes]
 
-    def get_nodes_features(self, nodes: typing.Union[list, np.ndarray, None]) -> np.ndarray:
+    def get_nodes_features(self, nodes: typing.Union[list, np.ndarray, None] = None) -> np.ndarray:
         if nodes is None:
             return self._node_feature
         else:

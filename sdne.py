@@ -3,7 +3,8 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 import numpy as np
 import argparse
-from data import DBLP
+from data import Cora
+from utils import embed_visual
 
 
 class SDNE(keras.Model):
@@ -54,26 +55,37 @@ if __name__ == "__main__":
     parser.add_argument("--embed_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--epoch_size", type=int, default=20)
+    parser.add_argument("--epoch_size", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--alpha", type=float, default=0.3)
     parser.add_argument("-beta", type=float, default=10.)
     arg = parser.parse_args()
 
-    dblp = DBLP()
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+
+    cora = Cora()
 
     def gen():
-        for batch_num in range(dblp.g.node_size // arg.batch_size):
+        for batch_num in range(cora.g.node_size // arg.batch_size):
             start_index = batch_num * arg.batch_size
             end_index = (batch_num + 1) * arg.batch_size
-            adj_batch_train = dblp.g.adj_csr[start_index:end_index, :].toarray().astype(np.float32)
+            adj_batch_train = cora.g.adj_csr[start_index:end_index, :].toarray().astype(np.float32)
             adj_mat_train = adj_batch_train[:, start_index:end_index]
             b_mat_train = np.ones_like(adj_batch_train).astype(np.float32)
             b_mat_train[adj_batch_train != 0] = arg.beta
             yield (adj_batch_train, adj_mat_train, b_mat_train),
-    data = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=[arg.batch_size, dblp.g.node_size], dtype=tf.float32), tf.TensorSpec(shape=[arg.batch_size, arg.batch_size], dtype=tf.float32), tf.TensorSpec(shape=[arg.batch_size, dblp.g.node_size], dtype=tf.float32)),))
+    data = tf.data.Dataset.from_generator(gen, output_signature=((tf.TensorSpec(shape=[arg.batch_size, cora.g.node_size], dtype=tf.float32), tf.TensorSpec(shape=[arg.batch_size, arg.batch_size], dtype=tf.float32), tf.TensorSpec(shape=[arg.batch_size, cora.g.node_size], dtype=tf.float32)),))
     data = data.prefetch(tf.data.experimental.AUTOTUNE)
 
-    model = SDNE(dblp.g.node_size, arg.embed_size, alpha=arg.alpha)
+    model = SDNE(cora.g.node_size, arg.embed_size, alpha=arg.alpha)
     model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.weight_decay))
     model.fit(data, epochs=arg.epoch_size)
+
+    embedding_matrix = model(cora.g.adj.toarray())
+    embed_visual(embedding_matrix, cora.g.get_nodes_label(), filename="./results/img/cora_sdne.png")

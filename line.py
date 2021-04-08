@@ -2,7 +2,8 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow_addons as tfa
 import argparse
-from data import DBLP
+from data import Cora
+from utils import embed_visual
 
 
 class LINE(keras.Model):
@@ -70,14 +71,24 @@ if __name__ == "__main__":
     parser.add_argument("--embed_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--epoch_size", type=int, default=20)
-    parser.add_argument("--batch_size", type=int, default=2048)
+    parser.add_argument("--epoch_size", type=int, default=500)
+    parser.add_argument("--batch_size", type=int, default=512)
 
     arg = parser.parse_args()
 
-    dblp = DBLP()
-    batch = dblp.g.edge_array[:, 0]
-    label = dblp.g.edge_array[:, 1]
-    model = LINE(dblp.g.node_size, arg.embed_size, order=2)
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+
+    cora = Cora()
+    batch = cora.g.edge_array[:, 0]
+    label = cora.g.edge_array[:, 1]
+    model = LINE(cora.g.node_size, arg.embed_size, order=2)
     model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.weight_decay))
     model.fit((batch, label), batch_size=arg.batch_size, epochs=arg.epoch_size)
+    embedding_matrix = model(cora.g.node_array)
+    embed_visual(embedding_matrix, label_array=cora.g.get_nodes_label(), filename="./results/img/cora_line.png")
