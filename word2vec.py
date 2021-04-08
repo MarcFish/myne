@@ -1,7 +1,5 @@
 import tensorflow as tf
 import tensorflow.keras as keras
-import numpy as np
-import argparse
 from layers import SampleSoftmaxLoss
 
 
@@ -23,11 +21,11 @@ class Word2Vec(keras.Model):
     def call(self, inputs, training=None, mask=None):
         if training:
             inp, tar = inputs
-            inp = tf.squeeze(inp)
-            tar = tf.squeeze(tar)
+            inp = tf.reshape(inp, (-1,))
             embed = self.embedding(inp)
-            self.loss_layer([tar, embed])
+            self.loss_layer((tar, embed))
             return embed
         else:
-            embed = self.embedding(tf.squeeze(inputs))
+            inp = tf.reshape(inputs, (-1))
+            embed = self.embedding(inp)
             return embed

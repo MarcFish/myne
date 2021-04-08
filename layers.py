@@ -12,7 +12,7 @@ class SampleSoftmaxLoss(keras.layers.Layer):
         units = input_shape[-1][-1]
         self.w = self.add_weight(shape=(self.node_size, units))
         self.b = self.add_weight(shape=(self.node_size, ))
-        super(SampleSoftmaxLoss, self).build(input_shape)
+        self.built = True
 
     def call(self, inputs, **kwargs):
         labels, embed = inputs

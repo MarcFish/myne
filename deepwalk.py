@@ -22,4 +22,3 @@ batch, label = generate_word(sentences, num_skips=2, skip_window=3)
 model = Word2Vec(dblp.g.node_size, arg.embed_size, num_sampled=10)
 model.compile(optimizer=tfa.optimizers.AdamW(learning_rate=arg.lr, weight_decay=arg.weight_decay))
 model.fit((batch, label), batch_size=arg.batch_size, epochs=arg.epoch_size)
-
