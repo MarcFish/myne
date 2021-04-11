@@ -58,9 +58,9 @@ def embed_visual(embedding_matrix, label_array=None, filename=None):
             x = x_embed[np.where(label_array == label)[0]]
             plt.scatter(x[:, 0], x[:, 1], label=label, s=3.0)
             plt.legend()
-        plt.show()
     if filename is not None:
         plt.savefig(filename)
+    plt.show()
 
 
 def svm(embedding_matrix, label_array):
@@ -96,7 +96,7 @@ def generate_word(sentences, num_skips=2, skip_window=2):  # generate train data
 
 
 def convert_coo_to_sparse(A):
-    indices = np.stack([A.row, A.col])
+    indices = np.stack([A.row, A.col], axis=-1)
     values = A.data
     dense_shape = A.shape
     return tf.SparseTensor(indices, values, dense_shape)

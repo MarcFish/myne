@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow.keras as keras
+import typing
 
 
 class SampleSoftmaxLoss(keras.layers.Layer):
@@ -16,6 +17,8 @@ class SampleSoftmaxLoss(keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         labels, embed = inputs
+        if labels.shape.rank == 1:
+            labels = tf.expand_dims(labels, axis=-1)
         loss = tf.reduce_mean(tf.nn.sampled_softmax_loss(weights=self.w,
                                                  biases=self.b,
                                                  inputs=embed,
@@ -27,11 +30,11 @@ class SampleSoftmaxLoss(keras.layers.Layer):
 
 
 class GraphAttention(keras.layers.Layer):
-    def __init__(self, feature_size, attn_heads=8, dropout_prob=0.3, activation="elu",
+    def __init__(self, units, attn_heads=8, dropout_prob=0.3, activation="elu",
                  attn_heads_reduction='mean', kernel_initializer='glorot_uniform',
                  bias_initializer='zeros'):
         super(GraphAttention, self).__init__()
-        self.feature_size = feature_size
+        self.units = units
         self.attn_heads = attn_heads
         self.activation = keras.activations.get(activation)
         self.dropout_prob = dropout_prob
@@ -48,19 +51,19 @@ class GraphAttention(keras.layers.Layer):
     def build(self, input_shape):  # X, A
         input_feature_size = input_shape[0][-1]
         for head in range(self.attn_heads):
-            kernel = self.add_weight(shape=(input_feature_size, self.feature_size), initializer=self.kernel_initializer)
+            kernel = self.add_weight(shape=(input_feature_size, self.units), initializer=self.kernel_initializer)
             self.kernels.append(kernel)
-            bias = self.add_weight(shape=(self.feature_size,), initializer=self.bias_initializer)
+            bias = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
             self.biases.append(bias)
-            attn_kernel_self = self.add_weight(shape=(self.feature_size, 1), initializer=self.kernel_initializer)
-            attn_kernel_neighs = self.add_weight(shape=(self.feature_size, 1), initializer=self.kernel_initializer)
+            attn_kernel_self = self.add_weight(shape=(self.units, 1), initializer=self.kernel_initializer)
+            attn_kernel_neighs = self.add_weight(shape=(self.units, 1), initializer=self.kernel_initializer)
             self.attn_kernels.append([attn_kernel_self, attn_kernel_neighs])
 
         self.built = True
 
-    def call(self, inputs):  # X, A
+    def call(self, inputs, **kwargs):
         X = inputs[0]
-        A = inputs[1]
+        A = tf.cast(inputs[1], tf.float32)
         outputs = list()
 
         for head in range(self.attn_heads):
@@ -96,6 +99,12 @@ class GraphAttention(keras.layers.Layer):
             output = tf.reduce_mean(tf.stack(outputs), axis=0)
         return output
 
+    def compute_output_shape(self, input_shape):
+        if self.attn_heads_reduction == "concat":
+            return input_shape[0][0], self.units * self.attn_heads
+        else:
+            return input_shape[0][0], self.units
+
 
 class GraphConvolution(keras.layers.Layer):
     """Basic graph convolution layer as in https://arxiv.org/abs/1609.02907"""
@@ -121,7 +130,7 @@ class GraphConvolution(keras.layers.Layer):
             self.bias = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
         self.built = True
 
-    def call(self, inputs):  # X, A
+    def call(self, inputs, **kwargs):
         features = inputs[0]  # node_size, feautre_size
         basis = inputs[1]  # support, node_size, node_size
 
@@ -151,7 +160,7 @@ class GCNFilter(keras.layers.Layer):
         self.shape = input_shapes[1]
         self.built = True
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         return self.process(inputs)
 
     def _localpool(self, inputs):
@@ -191,12 +200,12 @@ class Bilinear(keras.layers.Layer):
         assert len(input_shape) == 2
         i1 = input_shape[0][-1]
         i2 = input_shape[1][-1]
-        self.kernel = self.add_weight(shape=(i1, i2, self.unit), initializer=self.kernel_initializer)
+        self.kernel = self.add_weight(shape=(i1, i2, self.units), initializer=self.kernel_initializer)
         if self.use_bias:
-            self.bias = self.add_weight(shape=(self.unit,), initializer=self.bias_initializer)
+            self.bias = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
         self.built = True
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         i1 = inputs[0]  # batch, embed_size
         i2 = inputs[1]  # batch, embed_size
         output = tf.einsum("b...i,b...j,ijk->b...k", i1, i2, self.kernel)
@@ -204,43 +213,77 @@ class Bilinear(keras.layers.Layer):
             output = tf.nn.bias_add(output, self.bias)
         output = self.activation(output)
         return output
-    
-    
-class MeanAggregator(keras.layers.Layer):
-    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True,
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0][0], self.units
+
+
+class GraphSageConv(keras.layers.Layer):
+    def __init__(self, units, activation='elu', agg="mean", concat=True, dropout_prob=0.3, use_bias=True,
                  kernel_initializer='glorot_uniform',
                  bias_initializer='zeros'):
-        super(MeanAggregator, self).__init__()
-        self.unit = unit
+        super(GraphSageConv, self).__init__()
+        self.units = units
         self.activation = keras.activations.get(activation)
-        self.concat = concat
         self.dropout_prob = dropout_prob
         self.use_bias = use_bias
+        self.concat = concat
+        if agg in ["mean", "pool"]:
+            if agg == "mean":
+                self.agg = self.mean
+            elif agg == "pool":
+                self.agg = self.pool
+            else:
+                raise Exception("UnSupport Method")
+        else:
+            raise Exception("UnSupport Method")
 
         self.kernel_initializer = kernel_initializer
         self.bias_initializer = bias_initializer
 
     def build(self, input_shape):
         self_unit = input_shape[0][-1]
-        neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.unit), initializer=self.kernel_initializer)
-        self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
+        neigh_unit = input_shape[0][-1]
+        self.neigh_weights = self.add_weight(shape=(neigh_unit, self.units), initializer=self.kernel_initializer)
+        self.self_weights = self.add_weight(shape=(self_unit, self.units), initializer=self.kernel_initializer)
         if self.use_bias:
             if self.concat:
-                self.biases = self.add_weight(shape=(2 * self.unit,), initializer=self.bias_initializer)
+                self.biases = self.add_weight(shape=(2 * self.units,), initializer=self.bias_initializer)
             else:
-                self.biases = self.add_weight(shape=(self.unit, ), initializer=self.bias_initializer)
+                self.biases = self.add_weight(shape=(self.units, ), initializer=self.bias_initializer)
+
+        if self.agg == self.pool:
+            self.pool_w = self.add_weight(shape=(neigh_unit, self.units), initializer=self.kernel_initializer)
+            self.pool_b = self.add_weight(shape=(neigh_unit, ), initializer=self.bias_initializer)
         self.built = True
 
-    def call(self, inputs):
-        self_vec = inputs[0]  # batch, embed_size
-        neigh_vec = inputs[1]  # batch, neigh_samples, embed_size
-        self_vec = keras.layers.Dropout(self.dropout_prob)(self_vec)
-        neigh_vec = keras.layers.Dropout(self.dropout_prob)(neigh_vec)
+    def call(self, inputs, **kwargs):
+        x, a = inputs
+        a = tf.sparse.from_dense(a)
+        o = self.agg(x, a)
+        o = tf.nn.dropout(o, self.dropout_prob)
+        o = tf.math.l2_normalize(o, axis=-1)
+        return o
 
-        neigh_means = tf.reduce_mean(neigh_vec, axis=1)  # batch, embed_size
-        from_neighs = tf.matmul(neigh_means, self.neigh_weights)  # batch, unit
-        from_self = tf.matmul(self_vec, self.self_weights)  # batch, unit
+    def pool(self, x, a: tf.SparseTensor):
+        from_self = tf.matmul(x, self.self_weights)
+        from_neighs = tf.math.unsorted_segment_max(tf.gather(x, a.indices[:, 0], axis=-2), a.indices[:, 1], x.shape[0])
+        from_neighs = tf.matmul(from_neighs, self.neigh_weights)
+
+        if not self.concat:
+            output = tf.add_n([from_self, from_neighs])
+        else:
+            output = tf.concat([from_self, from_neighs], axis=-1)
+
+        if self.use_bias:
+            output += self.biases
+
+        return self.activation(output)
+
+    def mean(self, x, a: tf.SparseTensor):
+        from_self = tf.matmul(x, self.self_weights)
+        from_neighs = tf.math.unsorted_segment_mean(tf.gather(x, a.indices[:, 0], axis=-2), a.indices[:, 1], x.shape[0])
+        from_neighs = tf.matmul(from_neighs, self.neigh_weights)
 
         if not self.concat:
             output = tf.add_n([from_self, from_neighs])
@@ -254,63 +297,9 @@ class MeanAggregator(keras.layers.Layer):
 
     def compute_output_shape(self, input_shape):
         if self.concat:
-            return (None, self.unit * 2)
+            return input_shape[0][0], self.units * 2
         else:
-            return (None, self.unit)
-
-
-class LSTMAggregator(keras.layers.Layer):
-    def __init__(self, unit, activation='elu', concat=False, dropout_prob=0.3, use_bias=True,
-                 kernel_initializer='glorot_uniform',
-                 bias_initializer='zeros'):
-        super(LSTMAggregator, self).__init__()
-        self.unit = unit
-        self.activation = keras.activations.get(activation)
-        self.concat = concat
-        self.dropout_prob = dropout_prob
-        self.use_bias = use_bias
-
-        self.kernel_initializer = kernel_initializer
-        self.bias_initializer = bias_initializer
-
-    def build(self, input_shape):
-        self_unit = input_shape[0][-1]
-        neigh_unit = input_shape[1][-1]
-        self.neigh_weights = self.add_weight(shape=(self.unit, self.unit), initializer=self.kernel_initializer)
-        self.self_weights = self.add_weight(shape=(self_unit, self.unit), initializer=self.kernel_initializer)
-        if self.use_bias:
-            if self.concat:
-                self.biases = self.add_weight(shape=(2 * self.unit,), initializer=self.bias_initializer)
-            else:
-                self.biases = self.add_weight(shape=(self.unit, ), initializer=self.bias_initializer)
-        self.cell = keras.layers.LSTM(self.unit, dropout=self.dropout_prob)
-        self.built = True
-
-    def call(self, inputs):
-        self_vec = inputs[0]  # batch, embed_size
-        neigh_vec = inputs[1]  # batch, neigh_samples, embed_size
-        self_vec = keras.layers.Dropout(self.dropout_prob)(self_vec)
-        neigh_vec = keras.layers.Dropout(self.dropout_prob)(neigh_vec)
-
-        rnn_outputs = self.cell(neigh_vec)  # batch, unit
-        from_neighs = tf.matmul(rnn_outputs, self.neigh_weights)  # batch, unit
-        from_self = tf.matmul(self_vec, self.self_weights)  # batch, unit
-
-        if not self.concat:
-            output = tf.add_n([from_self, from_neighs])
-        else:
-            output = tf.concat([from_self, from_neighs], axis=-1)
-
-        if self.use_bias:
-            output += self.biases
-
-        return self.activation(output)
-
-    def compute_output_shape(self, input_shape):
-        if self.concat:
-            return None, self.unit * 2
-        else:
-            return None, self.unit
+            return input_shape[0][0], self.units
 
 
 class GRUCell(keras.layers.AbstractRNNCell):
@@ -505,10 +494,10 @@ class TLSTMCell(keras.layers.AbstractRNNCell):
 
 
 class GCRN1Cell(keras.layers.AbstractRNNCell):
-    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+    def __init__(self, units, func_cls, func_kwargs, activation="tanh", recurrent_activation="sigmoid",
                  use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
                  kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
-                 bias_initializer='ones', support=2, mode="gat"):
+                 bias_initializer='ones'):
         super(GCRN1Cell, self).__init__()
         self.units = units
         self.activation = keras.activations.get(activation)
@@ -519,19 +508,11 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
         self.kernel_initializer = kernel_initializer
         self.recurrent_initializer = recurrent_initializer
         self.bias_initializer = bias_initializer
-        self.support = support
-        self.mode = mode
+        self.func_cls = func_cls
+        self.func_kwargs = func_kwargs
 
     def build(self, input_shape):  # node_size, seq_len, embed_size+node_size
-        self.node_size = input_shape[0]
-        self.embed_size = input_shape[1] - self.node_size
-        if self.mode == "gat":
-            self.model = GraphAttention(self.units, kernel_initializer=self.kernel_initializer,
-                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
-        else:
-            self.model = GraphConvolution(self.units, kernel_initializer=self.kernel_initializer,
-                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
-            self.filter = GCNFilter(support=self.support)
+        self.func = self.func_cls(**self.func_kwargs)
         self.Wz = self.add_weight(shape=(self.units, self.units), initializer=self.kernel_initializer)
         self.Uz = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
         self.bz = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
@@ -542,13 +523,9 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
         self.Uh = self.add_weight(shape=(self.units, self.units), initializer=self.recurrent_initializer)
         self.bh = self.add_weight(shape=(self.units,), initializer=self.bias_initializer)
 
-    def call(self, input_at_t, states_at_t):  # node_size, embed_size + node_size;node_size, units *seq_len;
-        state_at_t = keras.layers.Dropout(self.dropout_prob)(states_at_t[0])  # node_size, units
-        x_at_t = tf.slice(input_at_t, [0, 0], [self.node_size, self.embed_size])  # node_size, embed_size
-        a_at_t = tf.slice(input_at_t, [0, self.embed_size], [self.node_size, self.node_size])  # node_size, node_size
-        if self.mode == "gcn":
-            a_at_t = self.filter(a_at_t)
-        input_at_t = self.model([x_at_t, a_at_t])
+    def call(self, input_at_t, states_at_t):  # node_size, embed_size; node_size, node_size * n
+        state_at_t = states_at_t[0]
+        input_at_t = self.func([state_at_t, input_at_t])
         zt = self.recurrent_activation(tf.matmul(input_at_t, self.Wz) + tf.matmul(state_at_t, self.Uz) + self.bz)
         zt = keras.layers.Dropout(self.recurrent_dropout_prob)(zt)
 
@@ -575,10 +552,10 @@ class GCRN1Cell(keras.layers.AbstractRNNCell):
 
 
 class GCRN2Cell(keras.layers.AbstractRNNCell):
-    def __init__(self, units, activation="tanh", recurrent_activation="sigmoid",
+    def __init__(self, units, func_cls, func_kwargs, activation="tanh", recurrent_activation="sigmoid",
                  use_bias=True, dropout_prob=0.3, recurrent_dropout_prob=0.3,
                  kernel_initializer='glorot_uniform', recurrent_initializer="orthogonal",
-                 bias_initializer='ones', mode="gat",support=2):
+                 bias_initializer='ones'):
         super(GCRN2Cell, self).__init__()
         self.units = units
         self.activation = keras.activations.get(activation)
@@ -589,51 +566,31 @@ class GCRN2Cell(keras.layers.AbstractRNNCell):
         self.kernel_initializer = kernel_initializer
         self.recurrent_initializer = recurrent_initializer
         self.bias_initializer = bias_initializer
-        self.mode = mode  # "gat","gcn"
-        self.support = support
+        self.func_cls = func_cls
+        self.func_kwargs = func_kwargs
 
-    def build(self, input_shape):  # node_size, seq_len, embed_size + node_size
-        self.node_size = input_shape[0]
-        self.embed_size = input_shape[1] - self.node_size
-        if self.mode == "gat":
-            model = GraphAttention
-        else:
-            model = GraphConvolution
-            self.filter = GCNFilter(support=self.support)
-        self.Wz = model(self.units, kernel_initializer=self.kernel_initializer,
-                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
-        self.Uz = model(self.units, kernel_initializer=self.recurrent_initializer,
-                        dropout_prob=self.recurrent_dropout_prob,
-                        bias_initializer=self.bias_initializer)
-        self.Wr = model(self.units, kernel_initializer=self.kernel_initializer,
-                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
-        self.Ur = model(self.units, kernel_initializer=self.recurrent_initializer,
-                        dropout_prob=self.recurrent_dropout_prob,
-                        bias_initializer=self.bias_initializer)
-        self.Wh = model(self.units, kernel_initializer=self.kernel_initializer,
-                        dropout_prob=self.dropout_prob, bias_initializer=self.bias_initializer)
-        self.Uh = model(self.units, kernel_initializer=self.recurrent_initializer,
-                        dropout_prob=self.recurrent_dropout_prob,
-                        bias_initializer=self.bias_initializer)
+    def build(self, input_shape):  # node_size, embed_size;node_size, node_size;
 
-    def call(self, input_at_t, states_at_t):  # node_size, embed_size + node_size;node_size, units *seq_len;
-        state_at_t = keras.layers.Dropout(self.dropout_prob)(states_at_t[0])  # node_size, units
-        x_at_t = tf.slice(input_at_t, [0, 0], [self.node_size, self.embed_size])  # node_size, embed_size
-        a_at_t = tf.slice(input_at_t, [0, self.embed_size], [self.node_size, self.node_size])  # node_size, node_size
-        if self.mode == "gcn":
-            a_at_t = self.filter(a_at_t)
-        x_at_t = keras.layers.Dropout(self.dropout_prob)(x_at_t)
-        zt = self.recurrent_activation(self.Wz([x_at_t, a_at_t]) + self.Uz([state_at_t, a_at_t]))
-        zt = keras.layers.Dropout(self.recurrent_dropout_prob)(zt)  # node_size, units
+        self.Wz = self.func_cls(**self.func_kwargs)
+        self.Uz = self.func_cls(**self.func_kwargs)
+        self.Wr = self.func_cls(**self.func_kwargs)
+        self.Ur = self.func_cls(**self.func_kwargs)
+        self.Wh = self.func_cls(**self.func_kwargs)
+        self.Uh = self.func_cls(**self.func_kwargs)
 
-        rt = self.recurrent_activation(self.Wr([x_at_t, a_at_t]) + self.Ur([state_at_t, a_at_t]))
-        rt = keras.layers.Dropout(self.recurrent_dropout_prob)(rt)  # node_size, units
+    def call(self, input_at_t, states_at_t):
+        state_at_t = states_at_t[0]
+        zt = self.recurrent_activation(self.Wz([state_at_t, input_at_t]) + self.Uz([state_at_t, input_at_t]))
+        zt = tf.nn.dropout(zt, self.recurrent_dropout_prob)  # node_size, units
 
-        ht_ = self.recurrent_activation(self.Wh([x_at_t, a_at_t]) + self.Uh([state_at_t * rt, a_at_t]))
-        ht_ = keras.layers.Dropout(self.recurrent_dropout_prob)(ht_)  # node_size, units
+        rt = self.recurrent_activation(self.Wr([state_at_t, input_at_t]) + self.Ur([state_at_t, input_at_t]))
+        rt = tf.nn.dropout(rt, self.recurrent_dropout_prob)  # node_size, units
+
+        ht_ = self.recurrent_activation(self.Wh([state_at_t, input_at_t]) + self.Uh([state_at_t * rt, input_at_t]))
+        ht_ = tf.nn.dropout(ht_, self.recurrent_dropout_prob)  # node_size, units
 
         ht = (1 - zt) * state_at_t + zt * ht_
-        ht = keras.layers.Dropout(self.dropout_prob)(ht)
+        ht = tf.nn.dropout(ht, self.dropout_prob)
         return ht, ht
 
     @property
