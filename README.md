@@ -9,8 +9,8 @@ This repository provides a reproduction for NRL models and is just for study.
 ### GAT
 ![avatar](https://github.com/MarcFish/NE/raw/master/results/img/cora_gat.png)
 ### GraphSage
-![lstm](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_lstm.png "lstm")
-![mean](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_mean.png "mean")
+![unsupervised](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_unsupervised.png "unsupervised")
+![supervised](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_supervised.png "supervised")
 ### SDNE
 ![avatar](https://github.com/MarcFish/NE/raw/master/results/img/cora_sdne.png)
 ### GCN
