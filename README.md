@@ -8,8 +8,9 @@ This repository provides a reproduction for NRL models and is just for study.
 ![avatar](https://github.com/MarcFish/NE/raw/master/results/img/cora_deepwalk.png)
 ### GAT
 ![avatar](https://github.com/MarcFish/NE/raw/master/results/img/cora_gat.png)
-### GraphSage
+### UnSupervised GraphSage
 ![unsupervised](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_unsupervised.png "unsupervised")
+### Supervised GraphSage
 ![supervised](https://github.com/MarcFish/NE/raw/master/results/img/cora_graphsage_supervised.png "supervised")
 ### SDNE
 ![avatar](https://github.com/MarcFish/NE/raw/master/results/img/cora_sdne.png)
